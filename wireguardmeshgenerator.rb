@@ -30,18 +30,18 @@ PeerSnippet = Struct.new(:description, :public_key, :preshared_key, :allowed_ips
 end
 
 WireguardConfig = Struct.new(:myself, :hosts) do
-  def to_s
-    peers = hosts.map do |name, data|
-      PeerSnippet.new("#{name}.#{data[:wg0][:domain]}",
-                      :PUB_KEY, :PRESHARED_KEY, "#{data[:wg0][:ip]}/32")
-    end
+  @peers = hosts.map do |name, data|
+    PeerSnippet.new("#{name}.#{data[:wg0][:domain]}",
+                    :PUB_KEY, :PRESHARED_KEY, "#{data[:wg0][:ip]}/32")
+  end
 
+  def to_s
     <<~CONFIG
       [Interface]
       Address = #{hosts[myself][:wg0][:ip]}
       PrivateKey = #{private_key}
 
-      #{peers.map(&:to_s).join("\n")}
+      #{@peers.map(&:to_s).join("\n")}
     CONFIG
   end
 
