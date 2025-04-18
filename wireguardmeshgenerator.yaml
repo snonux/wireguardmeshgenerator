@@ -1,0 +1,45 @@
+---
+wg_tool: /usr/bin/wg
+hosts:
+  f0:
+    lan:
+      domain: 'lan.buetow.org'
+      ip: '192.168.1.130'
+    wg0:
+      domain: 'wg0.buetow.org'
+      ip: '192.168.2.130'
+  f1:
+    lan:
+      domain: 'lan.buetow.org'
+      ip: '192.168.1.131'
+    wg0:
+      domain: 'wg0.buetow.org'
+      ip: '192.168.2.131'
+  f2:
+    lan:
+      domain: 'lan.buetow.org'
+      ip: '192.168.1.132'
+    wg0:
+      domain: 'wg0.buetow.org'
+      ip: '192.168.2.132'
+  r0:
+    lan:
+      domain: 'lan.buetow.org'
+      ip: '192.168.1.120'
+    wg0:
+      domain: 'wg0.buetow.org'
+      ip: '192.168.2.120'
+  r1:
+    lan:
+      domain: 'lan.buetow.org'
+      ip: '192.168.1.121'
+    wg0:
+      domain: 'wg0.buetow.org'
+      ip: '192.168.2.121'
+  r2:
+    lan:
+      domain: 'lan.buetow.org'
+      ip: '192.168.1.122'
+    wg0:
+      domain: 'wg0.buetow.org'
+      ip: '192.168.2.122'
