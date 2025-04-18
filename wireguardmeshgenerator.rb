@@ -42,13 +42,13 @@ end
 
 PeerSnippet = Struct.new(:myself, :domain, :allowed_ips, :endpoint) do
   def to_s
-    keys = KeyTool.new(myself)
+    keytool = KeyTool.new(myself)
 
     <<~PEER_CONFIG
       [Peer]
       # #{myself}.#{domain}
-      PublicKey = #{keys.pub}
-      PresharedKey = #{keys.preshared}
+      PublicKey = #{keytool.pub}
+      PresharedKey = #{keytool.preshared}
       Endpoint = #{endpoint}:56709
       AllowedIPs = #{allowed_ips}/32
     PEER_CONFIG
@@ -57,14 +57,14 @@ end
 
 WireguardConfig = Struct.new(:myself, :hosts) do
   def to_s
-    keys = KeyTool.new(myself)
+    keytool = KeyTool.new(myself)
 
     <<~CONFIG
       [Interface]
       # #{myself}.#{hosts[myself]['wg0']['domain']}
       Address = #{hosts[myself]['wg0']['ip']}
-      PrivateKey = #{keys.priv}
-      PresharedKey = #{keys.preshared}
+      PrivateKey = #{keytool.priv}
+      PresharedKey = #{keytool.preshared}
       ListenPort = 56709
 
       #{peer_snippets}
