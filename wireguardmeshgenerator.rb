@@ -67,7 +67,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
       PresharedKey = #{keytool.preshared}
       ListenPort = 56709
 
-      #{peer_snippets}
+      #{peers(&:to_s).join("\n")}
     CONFIG
   end
 
@@ -79,11 +79,13 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   private
 
-  def peer_snippets
+  def peers
     hosts.reject { _1 == myself }.map do |hostname, data|
-      PeerSnippet.new(hostname, data['wg0']['domain'],
-                      data['wg0']['ip'], data['lan']['ip'])
-    end.map(&:to_s).join("\n")
+      PeerSnippet.new(hostname,
+                      data['wg0']['domain'],
+                      data['wg0']['ip'],
+                      data['lan']['ip'])
+    end
   end
 end
 
