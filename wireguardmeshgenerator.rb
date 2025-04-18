@@ -43,6 +43,7 @@ end
 PeerSnippet = Struct.new(:myself, :domain, :allowed_ips, :endpoint) do
   def to_s
     keys = KeyTool.new(myself)
+
     <<~PEER_CONFIG
       [Peer]
       # #{myself}.#{domain}
@@ -56,11 +57,8 @@ end
 
 WireguardConfig = Struct.new(:myself, :hosts) do
   def to_s
-    peers = hosts.reject { _1 == myself }.map do |hostname, data|
-      PeerSnippet.new(hostname, data['wg0']['domain'], data['wg0']['ip'], data['lan']['ip'])
-    end
-
     keys = KeyTool.new(myself)
+
     <<~CONFIG
       [Interface]
       # #{myself}.#{hosts[myself]['wg0']['domain']}
@@ -69,7 +67,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
       PresharedKey = #{keys.preshared}
       ListenPort = 56709
 
-      #{peers.map(&:to_s).join("\n")}
+      #{peer_snippets}
     CONFIG
   end
 
@@ -77,6 +75,15 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     dist_dir = "dist/#{myself}/etc/wireguard"
     FileUtils.mkdir_p(dist_dir) unless Dir.exist?(dist_dir)
     File.write("#{dist_dir}/wg0.conf", to_s)
+  end
+
+  private
+
+  def peer_snippets
+    hosts.reject { _1 == myself }.map do |hostname, data|
+      PeerSnippet.new(hostname, data['wg0']['domain'],
+                      data['wg0']['ip'], data['lan']['ip'])
+    end.map(&:to_s).join("\n")
   end
 end
 
