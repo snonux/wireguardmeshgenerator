@@ -39,3 +39,23 @@ keys/r2
 keys/r2/privkey
 keys/r2/pubkey
 ```
+
+## Installation
+
+### FreeBSD
+
+https://docs.vultr.com/how-to-install-wireguard-vpn-on-freebsd-14-0
+
+```sh
+doas freebsd-update fetch..... and so on
+doas pkg install wireguard-tools
+
+paul@f0:~ % doas sysrc wireguard_interfaces="wg0"
+wireguard_interfaces:  -> wg0
+
+paul@f0:~ % doas sysrc wireguard_enable="YES"
+wireguard_enable:  -> YES
+
+```
+
+
