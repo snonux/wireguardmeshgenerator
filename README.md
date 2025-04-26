@@ -44,18 +44,19 @@ keys/r2/pubkey
 
 ### FreeBSD
 
-https://docs.vultr.com/how-to-install-wireguard-vpn-on-freebsd-14-0
-
 ```sh
-doas freebsd-update fetch..... and so on
+doas freebsd-update fetch..... and so on... reboot
+doas pkg update
+doas pkg upgrade
+reboot
+
 doas pkg install wireguard-tools
-
-paul@f0:~ % doas sysrc wireguard_interfaces="wg0"
-wireguard_interfaces:  -> wg0
-
-paul@f0:~ % doas sysrc wireguard_enable="YES"
-wireguard_enable:  -> YES
-
 ```
 
+### Rocky Linux 9
 
+```sh
+dnf update -y
+reboot
+dnf install wireguard-tools
+```

@@ -2,6 +2,7 @@
 
 require 'yaml'
 require 'fileutils'
+require 'English'
 
 # Generates Wireguard keys and config files for each host
 class KeyTool
@@ -75,6 +76,15 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     dist_dir = "dist/#{myself}/etc/wireguard"
     FileUtils.mkdir_p(dist_dir) unless Dir.exist?(dist_dir)
     File.write("#{dist_dir}/wg0.conf", to_s)
+    self
+  end
+
+  def upload!
+    ssh_user = hosts[myself]['lan']['ssh_user']
+    wg0_conf = "dist/#{myself}/etc/wireguard/wg0.conf"
+    puts "Uploading #{wg0_conf} to #{myself}:."
+    system("scp #{wg0_conf} #{ssh_user}@#{myself}:.")
+    raise "Unable to upload #{wg0_conf} to #{myself}" unless $CHILD_STATUS.success?
   end
 
   private
@@ -91,5 +101,5 @@ end
 
 CONFIG = YAML.load_file('wireguardmeshgenerator.yaml').freeze
 CONFIG['hosts'].each_key do |hostname|
-  WireguardConfig.new(hostname, CONFIG['hosts']).generate!
+  WireguardConfig.new(hostname, CONFIG['hosts']).generate!.upload!
 end

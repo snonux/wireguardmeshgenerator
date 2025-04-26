@@ -3,6 +3,7 @@ wg_tool: /usr/bin/wg
 hosts:
   f0:
     lan:
+      ssh_user: paul
       domain: 'lan.buetow.org'
       ip: '192.168.1.130'
     wg0:
@@ -10,6 +11,7 @@ hosts:
       ip: '192.168.2.130'
   f1:
     lan:
+      ssh_user: paul
       domain: 'lan.buetow.org'
       ip: '192.168.1.131'
     wg0:
@@ -17,6 +19,7 @@ hosts:
       ip: '192.168.2.131'
   f2:
     lan:
+      ssh_user: paul
       domain: 'lan.buetow.org'
       ip: '192.168.1.132'
     wg0:
@@ -24,6 +27,7 @@ hosts:
       ip: '192.168.2.132'
   r0:
     lan:
+      ssh_user: root
       domain: 'lan.buetow.org'
       ip: '192.168.1.120'
     wg0:
@@ -31,6 +35,7 @@ hosts:
       ip: '192.168.2.120'
   r1:
     lan:
+      ssh_user: root
       domain: 'lan.buetow.org'
       ip: '192.168.1.121'
     wg0:
@@ -38,6 +43,7 @@ hosts:
       ip: '192.168.2.121'
   r2:
     lan:
+      ssh_user: root
       domain: 'lan.buetow.org'
       ip: '192.168.1.122'
     wg0:
