@@ -15,6 +15,8 @@ sudo dnf install -y wireguard-tools
 rake
 ```
 
+It will generate the configs and scp the configs to the hosts
+
 Result:
 
 ```sh
@@ -51,7 +53,9 @@ doas pkg upgrade
 reboot
 
 doas pkg install wireguard-tools
+doas mv wg0.conf /usr/local/etc/wireguard/
 ```
+
 
 ### Rocky Linux 9
 
