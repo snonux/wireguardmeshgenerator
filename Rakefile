@@ -1,5 +1,13 @@
-task :generate_mesh do
-  ruby 'wireguardmeshgenerator.rb'
+task :generate do
+  ruby 'wireguardmeshgenerator.rb', '--generate'
 end
 
-task default: :generate_mesh
+task :clean do
+  ruby 'wireguardmeshgenerator.rb', '--clean'
+end
+
+task :install do
+  ruby 'wireguardmeshgenerator.rb', '--install'
+end
+
+task default: :generate
