@@ -10,29 +10,35 @@ require 'optparse'
 
 class KeyTool
   def initialize(myself)
-    raise 'Wireguard tool not found' unless
-      system('which wg > /dev/null 2>&1')
+    raise 'Wireguard tool not found' unless system('which wg > /dev/null 2>&1')
 
-    keys_dir = "keys/#{myself}/"
-    FileUtils.mkdir_p(keys_dir) unless Dir.exist?(keys_dir)
+    @myself = myself
+    @psk_dir = 'keys/psk'
+    mykeys_dir = "keys/#{myself}"
 
-    @pubkey_path = "#{keys_dir}/pubkey"
-    @privkey_path = "#{keys_dir}/privkey"
-    @preshared_path = "#{keys_dir}/preshared"
+    [mykeys_dir, @psk_dir].each do |dir|
+      FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+    end
 
-    generate! if !File.exist?(@pubkey_path) ||
-                 !File.exist?(@privkey_path) ||
-                 !File.exist?(@preshared_path)
+    @pubkey_path = "#{mykeys_dir}/pub.key"
+    @privkey_path = "#{mykeys_dir}/priv.key"
+
+    gen_privpub! if !File.exist?(@pubkey_path) || !File.exist?(@privkey_path)
   end
 
   def pub = File.read(@pubkey_path).strip
   def priv = File.read(@privkey_path).strip
-  def preshared = File.read(@preshared_path).strip
+
+  # Preshared key
+  def psk(peer)
+    psk_path = "#{@psk_dir}/#{[@myself, peer].sort.join('_')}.key"
+    gen_psk!(psk_path) unless File.exist?(psk_path)
+    File.read(psk_path).strip
+  end
 
   private
 
-  def generate! = gen_privpub! && genpsk!
-  def genpsk! = File.write(@preshared_path, `wg genpsk`)
+  def gen_psk!(psk_path) = File.write(psk_path, `wg genpsk`)
 
   def gen_privpub!
     privkey = IO.popen('wg genkey', 'r+', &:read)
@@ -45,7 +51,7 @@ class KeyTool
   end
 end
 
-PeerSnippet = Struct.new(:myself, :domain, :wgdomain,
+PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
                          :allowed_ips, :endpoint) do
   def to_s
     keytool = KeyTool.new(myself)
@@ -53,7 +59,7 @@ PeerSnippet = Struct.new(:myself, :domain, :wgdomain,
       [Peer]
       # #{myself}.#{domain} as #{myself}.#{wgdomain}
       PublicKey = #{keytool.pub}
-      PresharedKey = #{keytool.preshared}
+      pskKey = #{keytool.psk(peer)}
       Endpoint = #{endpoint}:56709
       AllowedIPs = #{allowed_ips}/32
     PEER_CONFIG
@@ -90,7 +96,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   def peers
     hosts.reject { _1 == myself }.map do |hostname, data|
-      PeerSnippet.new(hostname,
+      PeerSnippet.new(hostname, myself,
                       data['lan']['domain'],
                       data['wg0']['domain'],
                       data['wg0']['ip'],
