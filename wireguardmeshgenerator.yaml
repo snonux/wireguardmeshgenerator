@@ -4,9 +4,9 @@ hosts:
   f0:
     ssh:
       user: paul
-      config_dir: /usr/local/etc/wireguard
+      conf_dir: /usr/local/etc/wireguard
       sudo_cmd: doas
-      restart_cmd: doas service restart wireguard
+      reload_cmd: service wireguard reload
     lan:
       domain: 'lan.buetow.org'
       ip: '192.168.1.130'
@@ -16,9 +16,9 @@ hosts:
   f1:
     ssh:
       user: paul
-      config_dir: /usr/local/etc/wireguard
+      conf_dir: /usr/local/etc/wireguard
       sudo_cmd: doas
-      restart_cmd: doas service restart wireguard
+      reload_cmd: service wireguard reload
     lan:
       domain: 'lan.buetow.org'
       ip: '192.168.1.131'
@@ -28,9 +28,9 @@ hosts:
   f2:
     ssh:
       user: paul
-      config_dir: /usr/local/etc/wireguard
+      conf_dir: /usr/local/etc/wireguard
       sudo_cmd: doas
-      restart_cmd: doas service restart wireguard
+      reload_cmd: service wireguard reload
     lan:
       domain: 'lan.buetow.org'
       ip: '192.168.1.132'
@@ -40,9 +40,9 @@ hosts:
   r0:
     ssh:
       user: root
-      config_dir: /usr/local/etc/wireguard
+      conf_dir: /etc/wireguard
       sudo_cmd:
-      restart_cmd: service restart wireguard
+      reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: 'lan.buetow.org'
       ip: '192.168.1.120'
@@ -52,9 +52,9 @@ hosts:
   r1:
     ssh:
       user: root
-      config_dir: /usr/local/etc/wireguard
+      conf_dir: /etc/wireguard
       sudo_cmd:
-      restart_cmd: service restart wireguard
+      reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: 'lan.buetow.org'
       ip: '192.168.1.121'
@@ -64,9 +64,9 @@ hosts:
   r2:
     ssh:
       user: root
-      config_dir: /usr/local/etc/wireguard
+      conf_dir: /etc/wireguard
       sudo_cmd:
-      restart_cmd: service restart wireguard
+      reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: 'lan.buetow.org'
       ip: '192.168.1.122'

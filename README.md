@@ -9,10 +9,10 @@ bundler install
 sudo dnf install -y wireguard-tools
 ```
 
-## Usage
+## Generate
 
 ```sh
-rake
+rake generate
 ```
 
 It will generate the configs and scp the configs to the hosts
@@ -47,20 +47,38 @@ keys/r2/pubkey
 ### FreeBSD
 
 ```sh
-doas freebsd-update fetch..... and so on... reboot
-doas pkg update
-doas pkg upgrade
-reboot
+paul@f0:~ % doas freebsd-update fetch..... and so on... reboot
+paul@f0:~ % doas pkg update
+paul@f0:~ % doas pkg upgrade
+paul@f0:~ % reboot
 
-doas pkg install wireguard-tools
-doas mv wg0.conf /usr/local/etc/wireguard/
+paul@f0:~ % doas pkg install wireguard-tools
+paul@f0:~ % doas sysrc wireguard_interfaces=wg0
+wireguard_interfaces:  -> wg0
+paul@f0:~ % doas sysrc wireguard_enable=YES
+wireguard_enable:  -> YES
+paul@f0:~ % doas mkdir -p /usr/local/etc/wireguard
+paul@f0:~ % doas touch /usr/local/etc/wireguard/wg0.conf
+paul@f0:~ % doas service wireguard start
 ```
-
 
 ### Rocky Linux 9
 
 ```sh
-dnf update -y
-reboot
-dnf install wireguard-tools
+[root@r0 ~] dnf update -y
+[root@r0 ~] reboot
+
+[root@r0 ~] dnf install wireguard-tools
+[root@r0 ~] mkdir -p /etc/wireguard
+[root@r0 ~] touch /etc/wireguard/wg0.conf
+[root@r0 ~] systemctl enable wg-quick@wg0.service
+[root@r0 ~] systemctl start wg-quick@wg0.service
 ```
+
+### Install the config
+
+```sh
+rake install
+```
+
+

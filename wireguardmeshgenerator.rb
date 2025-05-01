@@ -55,21 +55,21 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
                          :allowed_ips, :endpoint) do
   def to_s
     keytool = KeyTool.new(myself)
-    <<~PEER_CONFIG
+    <<~PEER_CONF
       [Peer]
       # #{myself}.#{domain} as #{myself}.#{wgdomain}
       PublicKey = #{keytool.pub}
-      pskKey = #{keytool.psk(peer)}
+      PresharedKey = #{keytool.psk(peer)}
       Endpoint = #{endpoint}:56709
       AllowedIPs = #{allowed_ips}/32
-    PEER_CONFIG
+    PEER_CONF
   end
 end
 
 WireguardConfig = Struct.new(:myself, :hosts) do
   def to_s
     keytool = KeyTool.new(myself)
-    <<~CONFIG
+    <<~CONF
       [Interface]
       # #{myself}.#{hosts[myself]['wg0']['domain']}
       Address = #{hosts[myself]['wg0']['ip']}
@@ -77,7 +77,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
       ListenPort = 56709
 
       #{peers(&:to_s).join("\n")}
-    CONFIG
+    CONF
   end
 
   def clean!
@@ -107,44 +107,60 @@ end
 
 InstallConfig = Struct.new(:myself, :hosts) do
   def initialize(myself, hosts)
+    @myself = myself
     @ssh_user = hosts[myself]['ssh']['user']
     @sudo_cmd = hosts[myself]['ssh']['sudo_cmd']
-    @restart_cmd = hosts[myself]['ssh']['restart_cmd']
+    @reload_cmd = hosts[myself]['ssh']['reload_cmd']
+    @conf_dir = hosts[myself]['ssh']['conf_dir']
   end
 
   def upload!
-    wg0_conf = "dist/#{myself}/etc/wireguard/wg0.conf"
-    puts "Uploading #{wg0_conf} to #{myself}:."
-    raise "Upload to #{myself} failed" unless
-      Net::SCP.upload!(myself, @ssh_user, wg0_conf, '.')
-
+    wg0_conf = "dist/#{@myself}/etc/wireguard/wg0.conf"
+    scp(wg0_conf)
     self
   end
 
   def install!
-    puts "Installing Wireguard config on #{myself}"
+    puts "Installing Wireguard config on #{@myself}"
     ssh <<~SH
-      if [ ! -d #{@config_path} ]; then
-        #{@sudo_cmd} mkdir -p #{@config_path}
-        #{@sudo_cmd} mv -v wg0.conf #{@config_path}
+      if [ ! -d #{@conf_dir} ]; then
+        #{@sudo_cmd} mkdir -p #{@conf_dir}
       fi
+      #{@sudo_cmd} chmod 700 #{@conf_dir}
+      #{@sudo_cmd} mv -v wg0.conf #{@conf_dir}
+      #{@sudo_cmd} chmod 600 #{@conf_dir}/wg0.conf
     SH
-    raise "Unable to install Wireguard config on #{myself}" unless
-      $CHILD_STATUS.success?
-
-    self
   end
 
   def restart!
-    puts "Restarting Wireguard on #{myself}"
-    ssh "#{@sudo_cmd} #{@restart_cmd}"
-    raise "Unable to restart Wireguard on #{myself}" unless
-       $CHILD_STATUS.success?
+    puts "Reloading Wireguard on #{@myself}"
+    ssh <<~SH
+      #{@sudo_cmd} #{@reload_cmd}
+    SH
   end
 
   private
 
-  def ssh(cmd) = Net::SSH.start(myself, @ssh_user) { _1.exec!(cmd) }
+  def scp(src, dst = '.')
+    puts "Uploading #{src} to #{@myself}:#{dst}"
+    raise "Upload #{srd} to #{@myself}:#{dst} failed" unless
+      Net::SCP.upload!(@myself, @ssh_user, src, dst)
+  end
+
+  def ssh(cmd)
+    File.write('cmd.sh', <<~SH) and scp('cmd.sh')
+      #!/bin/sh
+      set -x
+      #{cmd}
+    SH
+    Net::SSH.start(@myself, @ssh_user) do |ssh|
+      output = ssh.exec!('sh cmd.sh')
+      raise output unless output.exitstatus.zero?
+
+      puts output
+    end
+    self
+  end
 end
 
 begin
