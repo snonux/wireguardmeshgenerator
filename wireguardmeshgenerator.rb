@@ -5,14 +5,16 @@ require 'fileutils'
 require 'net/scp'
 require 'net/ssh'
 require 'yaml'
+
 require 'optparse'
 
-# Generates Wireguard keys and configuration files for a specified host.
+CONFIG = YAML.load_file('wireguardmeshgenerator.yaml').freeze
+
 class KeyTool
   def initialize(myself)
-    raise 'Wireguard tool not found' unless system('which wg > /dev/null 2>&1')
+    raise 'Wireguard tool not found' unless
+      system('which wg > /dev/null 2>&1')
 
-    # Initialize keys directory based on the host
     keys_dir = "keys/#{myself}/"
     FileUtils.mkdir_p(keys_dir) unless Dir.exist?(keys_dir)
 
@@ -20,7 +22,6 @@ class KeyTool
     @privkey_path = "#{keys_dir}/privkey"
     @preshared_path = "#{keys_dir}/preshared"
 
-    # Generate keys if any key files are missing
     generate! if !File.exist?(@pubkey_path) ||
                  !File.exist?(@privkey_path) ||
                  !File.exist?(@preshared_path)
@@ -32,32 +33,26 @@ class KeyTool
 
   private
 
-  # Triggers key generation steps
   def generate! = gen_privpub! && genpsk!
-  # Generates the pre-shared key
   def genpsk! = File.write(@preshared_path, `wg genpsk`)
 
-  # Generates private and public key pairs
   def gen_privpub!
-    privkey = IO.popen('wg genkey', 'r+', &:read) # Generate private key
-    IO.popen('wg pubkey', 'r+') do |io| # Generate public key from private key
+    privkey = IO.popen('wg genkey', 'r+', &:read)
+    IO.popen('wg pubkey', 'r+') do |io|
       io.puts(privkey)
       io.close_write
-      File.write(@privkey_path, privkey) # Save private key to file
-      File.write(@pubkey_path, io.read) # Save public key to file
+      File.write(@privkey_path, privkey)
+      File.write(@pubkey_path, io.read)
     end
   end
 end
 
-# PeerSnippet struct representing Wireguard peer details
-PeerSnippet = Struct.new(:myself, :domain, :allowed_ips, :endpoint) do
-  # Generates a peer configuration snippet for Wireguard
+PeerSnippet = Struct.new(:myself, :domain, :wgdomain, :allowed_ips, :endpoint) do
   def to_s
     keytool = KeyTool.new(myself)
-
     <<~PEER_CONFIG
       [Peer]
-      # #{myself}.#{domain}
+      # #{myself}.#{domain} as #{myself}.#{wgdomain}
       PublicKey = #{keytool.pub}
       PresharedKey = #{keytool.preshared}
       Endpoint = #{endpoint}:56709
@@ -66,12 +61,9 @@ PeerSnippet = Struct.new(:myself, :domain, :allowed_ips, :endpoint) do
   end
 end
 
-# WireguardConfig struct representing a Wireguard configuration
 WireguardConfig = Struct.new(:myself, :hosts) do
-  # Generates the full Wireguard configuration
   def to_s
     keytool = KeyTool.new(myself)
-
     <<~CONFIG
       [Interface]
       # #{myself}.#{hosts[myself]['wg0']['domain']}
@@ -83,14 +75,12 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     CONFIG
   end
 
-  # Cleans up the keys directory for the current host
   def clean!
     %w[dist keys].select { |dir| Dir.exist?(dir) }.each do |dir|
       FileUtils.rm_r(dir)
     end
   end
 
-  # Generates the Wireguard configuration and saves it to a file
   def generate!
     dist_dir = "dist/#{myself}/etc/wireguard"
     FileUtils.mkdir_p(dist_dir) unless Dir.exist?(dist_dir)
@@ -99,10 +89,10 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   private
 
-  # Builds peer snippets for all hosts except the current one
   def peers
     hosts.reject { _1 == myself }.map do |hostname, data|
       PeerSnippet.new(hostname,
+                      data['lan']['domain'],
                       data['wg0']['domain'],
                       data['wg0']['ip'],
                       data['lan']['ip'])
@@ -110,7 +100,6 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   end
 end
 
-# This is responsible for handling the installation process of the wireguard configuration.
 InstallConfig = Struct.new(:myself, :hosts) do
   def initialize(myself, hosts)
     @ssh_user = hosts[myself]['ssh']['user']
@@ -118,19 +107,17 @@ InstallConfig = Struct.new(:myself, :hosts) do
     @restart_cmd = hosts[myself]['ssh']['restart_cmd']
   end
 
-  # Uploads the configuration file to a remote host
   def upload!
     wg0_conf = "dist/#{myself}/etc/wireguard/wg0.conf"
     puts "Uploading #{wg0_conf} to #{myself}:."
-    raise "Upload to #{myself} failed" unless Net::SCP.upload!(myself, @ssh_user, wg0_conf, '.')
+    raise "Upload to #{myself} failed" unless
+      Net::SCP.upload!(myself, @ssh_user, wg0_conf, '.')
 
     self
   end
 
-  # Installs the Wireguard configuration on the remote host
   def install!
     puts "Installing Wireguard config on #{myself}"
-
     ssh <<~SH
       if [ ! -d #{@config_path} ]; then
         #{@sudo_cmd} mkdir -p #{@config_path}
@@ -138,58 +125,51 @@ InstallConfig = Struct.new(:myself, :hosts) do
         #{@sudo_cmd} #{@restart_cmd}
       fi
     SH
-
-    raise "Unable to install Wireguard config on #{myself}" unless $CHILD_STATUS.success?
+    raise "Unable to install Wireguard config on #{myself}" unless
+      $CHILD_STATUS.success?
 
     self
   end
 
   def reload!
     puts "Reloading Wireguard config on #{myself}"
-
     ssh <<~SH
       #{@sudo_cmd} #{@restart_cmd}
     SH
-
-    raise "Unable to reload Wireguard config on #{myself}" unless $CHILD_STATUS.success?
+    raise "Unable to reload Wireguard config on #{myself}" unless
+       $CHILD_STATUS.success?
 
     self
   end
 
   private
 
-  def ssh(command)
-    Net::SSH.start(myself, @ssh_user) do |ssh|
-      ssh.exec!(command)
-    end
-  end
+  def ssh(command) = Net::SSH.start(myself, @ssh_user) { |s| s.exec!(command) }
 end
 
 begin
-  CONFIG = YAML.load_file('wireguardmeshgenerator.yaml').freeze
   options = {}
   OptionParser.new do |opts|
-    opts.on('--generate', 'Generate Wireguard configs') { options[:generate] = true }
-    opts.on('--install', 'Install Wireguard configs') { options[:install] = true }
-    opts.on('--clean', 'Clean Wireguard configs') { options[:clean] = true }
+    opts.on('--generate', 'Generate Wireguard configs') do
+      options[:generate] = true
+    end
+    opts.on('--install', 'Install Wireguard configs') do
+      options[:install] = true
+    end
+    opts.on('--clean', 'Clean Wireguard configs') do
+      options[:clean] = true
+    end
   end.parse!
 
-  if options[:generate]
-    CONFIG['hosts'].each_key do |hostname|
-      WireguardConfig.new(hostname, CONFIG['hosts']).generate!
-    end
-  end
+  CONFIG['hosts'].each_key do |hostname|
+    WireguardConfig.new(hostname, CONFIG['hosts']).generate! if
+      options[:generate]
 
-  if options[:install]
-    CONFIG['hosts'].each_key do |hostname|
-      InstallConfig.new(hostname, CONFIG['hosts']).upload!.install!.reload!
-    end
-  end
+    InstallConfig.new(hostname, CONFIG['hosts']).upload!.install!.reload! if
+      options[:install]
 
-  if options[:clean]
-    CONFIG['hosts'].each_key do |hostname|
-      WireguardConfig.new(hostname, CONFIG['hosts']).clean!
-    end
+    WireguardConfig.new(hostname, CONFIG['hosts']).clean! if
+      options[:clean]
   end
 rescue StandardError => e
   puts "Error: #{e.message}"
