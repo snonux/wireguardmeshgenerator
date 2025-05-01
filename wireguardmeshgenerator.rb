@@ -8,8 +8,6 @@ require 'yaml'
 
 require 'optparse'
 
-CONFIG = YAML.load_file('wireguardmeshgenerator.yaml').freeze
-
 class KeyTool
   def initialize(myself)
     raise 'Wireguard tool not found' unless
@@ -47,7 +45,8 @@ class KeyTool
   end
 end
 
-PeerSnippet = Struct.new(:myself, :domain, :wgdomain, :allowed_ips, :endpoint) do
+PeerSnippet = Struct.new(:myself, :domain, :wgdomain,
+                         :allowed_ips, :endpoint) do
   def to_s
     keytool = KeyTool.new(myself)
     <<~PEER_CONFIG
@@ -122,7 +121,6 @@ InstallConfig = Struct.new(:myself, :hosts) do
       if [ ! -d #{@config_path} ]; then
         #{@sudo_cmd} mkdir -p #{@config_path}
         #{@sudo_cmd} mv -v wg0.conf #{@config_path}
-        #{@sudo_cmd} #{@restart_cmd}
       fi
     SH
     raise "Unable to install Wireguard config on #{myself}" unless
@@ -131,20 +129,16 @@ InstallConfig = Struct.new(:myself, :hosts) do
     self
   end
 
-  def reload!
-    puts "Reloading Wireguard config on #{myself}"
-    ssh <<~SH
-      #{@sudo_cmd} #{@restart_cmd}
-    SH
-    raise "Unable to reload Wireguard config on #{myself}" unless
+  def restart!
+    puts "Restarting Wireguard on #{myself}"
+    ssh "#{@sudo_cmd} #{@restart_cmd}"
+    raise "Unable to restart Wireguard on #{myself}" unless
        $CHILD_STATUS.success?
-
-    self
   end
 
   private
 
-  def ssh(command) = Net::SSH.start(myself, @ssh_user) { |s| s.exec!(command) }
+  def ssh(cmd) = Net::SSH.start(myself, @ssh_user) { _1.exec!(cmd) }
 end
 
 begin
@@ -161,14 +155,15 @@ begin
     end
   end.parse!
 
-  CONFIG['hosts'].each_key do |hostname|
-    WireguardConfig.new(hostname, CONFIG['hosts']).generate! if
+  conf = YAML.load_file('wireguardmeshgenerator.yaml').freeze
+  conf['hosts'].each_key do |hostname|
+    WireguardConfig.new(hostname, conf['hosts']).generate! if
       options[:generate]
 
-    InstallConfig.new(hostname, CONFIG['hosts']).upload!.install!.reload! if
+    InstallConfig.new(hostname, conf['hosts']).upload!.install!.restart! if
       options[:install]
 
-    WireguardConfig.new(hostname, CONFIG['hosts']).clean! if
+    WireguardConfig.new(hostname, conf['hosts']).clean! if
       options[:clean]
   end
 rescue StandardError => e
