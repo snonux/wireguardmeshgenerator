@@ -1,7 +1,7 @@
 ---
-wg_tool: /usr/bin/wg
 hosts:
   f0:
+    os: FreeBSD
     ssh:
       user: paul
       conf_dir: /usr/local/etc/wireguard
@@ -11,9 +11,11 @@ hosts:
       domain: 'lan.buetow.org'
       ip: '192.168.1.130'
     wg0:
-      domain: 'wg0.buetow.org'
+      domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.130'
+    exclude_peers: [fishfinger, blowfish]
   f1:
+    os: FreeBSD
     ssh:
       user: paul
       conf_dir: /usr/local/etc/wireguard
@@ -23,9 +25,11 @@ hosts:
       domain: 'lan.buetow.org'
       ip: '192.168.1.131'
     wg0:
-      domain: 'wg0.buetow.org'
+      domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.131'
+    exclude_peers: [fishfinger, blowfish]
   f2:
+    os: FreeBSD
     ssh:
       user: paul
       conf_dir: /usr/local/etc/wireguard
@@ -35,9 +39,11 @@ hosts:
       domain: 'lan.buetow.org'
       ip: '192.168.1.132'
     wg0:
-      domain: 'wg0.buetow.org'
+      domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.132'
+    exclude_peers: [fishfinger, blowfish]
   r0:
+    os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
@@ -47,9 +53,10 @@ hosts:
       domain: 'lan.buetow.org'
       ip: '192.168.1.120'
     wg0:
-      domain: 'wg0.buetow.org'
+      domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.120'
   r1:
+    os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
@@ -59,9 +66,10 @@ hosts:
       domain: 'lan.buetow.org'
       ip: '192.168.1.121'
     wg0:
-      domain: 'wg0.buetow.org'
+      domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.121'
   r2:
+    os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
@@ -71,5 +79,33 @@ hosts:
       domain: 'lan.buetow.org'
       ip: '192.168.1.122'
     wg0:
-      domain: 'wg0.buetow.org'
+      domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.122'
+  blowfish:
+    os: OpenBSD
+    ssh:
+      user: rex
+      conf_dir: /etc/wireguard
+      sudo_cmd: doas
+      reload_cmd: rcctl reload wireguard
+    internet:
+      domain: 'buetow.org'
+      ip: '23.88.35.144'
+    wg0:
+      domain: 'wg0.wan.buetow.org'
+      ip: '192.168.2.110'
+    exclude_peers: [f0, f1, f2]
+  fishfinger:
+    os: OpenBSD
+    ssh:
+      user: rex
+      conf_dir: /etc/wireguard
+      sudo_cmd: doas
+      reload_cmd: rcctl reload wireguard
+    internet:
+      domain: 'buetow.org'
+      ip: '46.23.94.99'
+    wg0:
+      domain: 'wg0.wan.buetow.org'
+      ip: '192.168.2.111'
+    exclude_peers: [f0, f1, f2]

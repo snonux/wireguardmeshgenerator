@@ -61,6 +61,9 @@ END
 192.168.2.120 r0.wg0 r0.wg0.wan.buetow.org
 192.168.2.121 r1.wg0 r1.wg0.wan.buetow.org
 192.168.2.122 r2.wg0 r2.wg0.wan.buetow.org
+
+192.168.2.110 blowfish.wg0 blowfish.wg0.wan.buetow.org
+192.168.2.111 fishfinger.wg0 fishfinger.wg0.wan.buetow.org
 END
 ```
 
@@ -70,6 +73,11 @@ https://github.com/angristan/wireguard-install/discussions/499
 [root@r0 ~] dnf install policycoreutils-python-utils
 [root@r0 ~] semanage permissive -a wireguard_t
 [root@r0 ~] reboot
+```
+
+### OpenBSD
+
+```sh
 ```
 
 ### Install the config

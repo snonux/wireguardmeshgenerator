@@ -60,9 +60,15 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
       # #{myself}.#{domain} as #{myself}.#{wgdomain}
       PublicKey = #{keytool.pub}
       PresharedKey = #{keytool.psk(peer)}
-      Endpoint = #{endpoint}:56709
       AllowedIPs = #{allowed_ips}/32
+      #{endpoint_str}
     PEER_CONF
+  end
+
+  def endpoint_str
+    return '# Due to NAT no Endpoint configured' if endpoint == :behind_nat
+
+    "Endpoint = #{endpoint}:56709"
   end
 end
 
@@ -95,12 +101,20 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   private
 
   def peers
-    hosts.reject { _1 == myself }.map do |hostname, data|
-      PeerSnippet.new(hostname, myself,
-                      data['lan']['domain'],
-                      data['wg0']['domain'],
-                      data['wg0']['ip'],
-                      data['lan']['ip'])
+    excluded = hosts[myself].fetch('exclude_peers', []) << myself
+    i_am_in_lan = hosts[myself].key?('lan')
+
+    hosts.reject { excluded.include?(_1) }.map do |peer, data|
+      peer_is_in_lan = data.key?('lan')
+      reach = data[peer_is_in_lan ? 'lan' : 'internet']
+      endpoint = if peer_is_in_lan == i_am_in_lan ||
+                    !peer_is_in_lan
+                   reach['ip']
+                 else
+                   :behind_nat
+                 end
+      PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
+                      data['wg0']['ip'], endpoint)
     end
   end
 end
