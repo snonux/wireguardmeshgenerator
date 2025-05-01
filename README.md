@@ -42,13 +42,12 @@ END
 [root@r0 ~] dnf update -y
 [root@r0 ~] reboot
 
-[root@r0 ~] firewall-cmd --add-port=51820/udp --permanent
-[root@r0 ~] firewall-cmd --reload
 [root@r0 ~] dnf install wireguard-tools
 [root@r0 ~] mkdir -p /etc/wireguard
 [root@r0 ~] touch /etc/wireguard/wg0.conf
 [root@r0 ~] systemctl enable wg-quick@wg0.service
 [root@r0 ~] systemctl start wg-quick@wg0.service
+[root@r0 ~] systemctl disable firewalld
 [root@r0 ~] cat <<END >>/etc/hosts
 
 192.168.1.130 f0 f0.lan f0.lan.buetow.org
