@@ -128,7 +128,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
       fi
       #{@sudo_cmd} chmod 700 #{@conf_dir}
       #{@sudo_cmd} mv -v wg0.conf #{@conf_dir}
-      #{@sudo_cmd} chmod 600 #{@conf_dir}/wg0.conf
+      #{@sudo_cmd} chmod 644 #{@conf_dir}/wg0.conf
     SH
   end
 
@@ -136,6 +136,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
     puts "Reloading Wireguard on #{@myself}"
     ssh <<~SH
       #{@sudo_cmd} #{@reload_cmd}
+      #{@sudo_cmd} wg show
     SH
   end
 
