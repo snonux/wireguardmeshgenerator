@@ -1,6 +1,6 @@
 # WireGuard Mesh Generator
 
-This generates the WireGuard config for my f3s project. This script is run on my Fedora Linux laptop.
+STILL WIP! The readme here are just notes for myself for a future blog post on f3s. Stau tuned!
 
 ## Installation
 
@@ -108,6 +108,8 @@ END
 ```
 
 ### Install the config
+
+This generates the WireGuard config for my f3s project. This script is run on my Fedora Linux laptop.
 
 ## Installation
 
