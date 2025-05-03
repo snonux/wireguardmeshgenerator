@@ -1,6 +1,6 @@
 # WireGuard Mesh Generator
 
-STILL WIP! The readme here are just notes for myself for a future blog post on f3s. Stau tuned!
+STILL WIP! The readme here are just notes for myself for a future blog post on f3s. Stay tuned!
 
 ## Installation
 
