@@ -33,6 +33,9 @@ paul@f0:~ % cat <<END | doas tee -a /etc/hosts
 192.168.2.120 r0.wg0 r0.wg0.wan.buetow.org
 192.168.2.121 r1.wg0 r1.wg0.wan.buetow.org
 192.168.2.122 r2.wg0 r2.wg0.wan.buetow.org
+
+192.168.2.110 blowfish.wg0 blowfish.wg0.wan.buetow.org
+192.168.2.111 fishfinger.wg0 fishfinger.wg0.wan.buetow.org
 END
 ```
 
@@ -87,6 +90,20 @@ blowsish$ cat <<END | doas tee /etc/hostname.wg0
 inet 192.168.2.110 255.255.255.0 NONE
 up
 !/usr/local/bin/wg setconf wg0 /etc/wireguard/wg0.conf
+END
+blowfish$
+cat <<END | doas tee -a /etc/hosts
+
+192.168.2.130 f0.wg0 f0.wg0.wan.buetow.org
+192.168.2.131 f1.wg0 f1.wg0.wan.buetow.org
+192.168.2.132 f2.wg0 f2.wg0.wan.buetow.org
+
+192.168.2.120 r0.wg0 r0.wg0.wan.buetow.org
+192.168.2.121 r1.wg0 r1.wg0.wan.buetow.org
+192.168.2.122 r2.wg0 r2.wg0.wan.buetow.org
+
+192.168.2.110 blowfish.wg0 blowfish.wg0.wan.buetow.org
+192.168.2.111 fishfinger.wg0 fishfinger.wg0.wan.buetow.org
 END
 ```
 

@@ -13,7 +13,6 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.130'
-    exclude_peers: [fishfinger, blowfish]
   f1:
     os: FreeBSD
     ssh:
@@ -27,7 +26,6 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.131'
-    exclude_peers: [fishfinger, blowfish]
   f2:
     os: FreeBSD
     ssh:
@@ -41,7 +39,6 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.132'
-    exclude_peers: [fishfinger, blowfish]
   r0:
     os: Linux
     ssh:
@@ -94,7 +91,6 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.110'
-    exclude_peers: [f0, f1, f2]
   fishfinger:
     os: OpenBSD
     ssh:
@@ -108,4 +104,3 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.111'
-    exclude_peers: [f0, f1, f2]
