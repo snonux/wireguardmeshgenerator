@@ -94,6 +94,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   def generate!
     dist_dir = "dist/#{myself}/etc/wireguard"
+    puts "Generating #{dist_dir}/wg0.conf"
     FileUtils.mkdir_p(dist_dir) unless Dir.exist?(dist_dir)
     File.write("#{dist_dir}/wg0.conf", to_s)
   end
@@ -122,10 +123,14 @@ end
 InstallConfig = Struct.new(:myself, :hosts) do
   def initialize(myself, hosts)
     @myself = myself
-    @ssh_user = hosts[myself]['ssh']['user']
-    @sudo_cmd = hosts[myself]['ssh']['sudo_cmd']
-    @reload_cmd = hosts[myself]['ssh']['reload_cmd']
-    @conf_dir = hosts[myself]['ssh']['conf_dir']
+
+    data = hosts[myself]
+    domain = data.dig('lan', 'domain') || data.dig('internet', 'domain')
+    @fqdn = "#{myself}.#{domain}"
+    @ssh_user = data['ssh']['user']
+    @sudo_cmd = data['ssh']['sudo_cmd']
+    @reload_cmd = data['ssh']['reload_cmd']
+    @conf_dir = data['ssh']['conf_dir']
   end
 
   def upload!
@@ -157,9 +162,9 @@ InstallConfig = Struct.new(:myself, :hosts) do
   private
 
   def scp(src, dst = '.')
-    puts "Uploading #{src} to #{@myself}:#{dst}"
-    raise "Upload #{srd} to #{@myself}:#{dst} failed" unless
-      Net::SCP.upload!(@myself, @ssh_user, src, dst)
+    puts "Uploading #{src} to #{@fqdn}:#{dst}"
+    raise "Upload #{srd} to #{@fqdn}:#{dst} failed" unless
+      Net::SCP.upload!(@fqdn, @ssh_user, src, dst)
   end
 
   def ssh(cmd)
@@ -170,7 +175,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
       rm $0
     SH
     File.delete('cmd.sh') if File.exist?('cmd.sh')
-    Net::SSH.start(@myself, @ssh_user) do |ssh|
+    Net::SSH.start(@fqdn, @ssh_user) do |ssh|
       output = ssh.exec!('sh cmd.sh')
       raise output unless output.exitstatus.zero?
 
@@ -181,7 +186,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
 end
 
 begin
-  options = {}
+  options = { hosts: [] }
   OptionParser.new do |opts|
     opts.on('--generate', 'Generate Wireguard configs') do
       options[:generate] = true
@@ -192,18 +197,18 @@ begin
     opts.on('--clean', 'Clean Wireguard configs') do
       options[:clean] = true
     end
+    opts.on('--hosts=HOSTS', 'Comma separated hosts to configure') do |hosts|
+      options[:hosts] = hosts.split(',')
+    end
   end.parse!
 
   conf = YAML.load_file('wireguardmeshgenerator.yaml').freeze
-  conf['hosts'].each_key do |hostname|
-    WireguardConfig.new(hostname, conf['hosts']).generate! if
-      options[:generate]
 
-    InstallConfig.new(hostname, conf['hosts']).upload!.install!.restart! if
-      options[:install]
-
-    WireguardConfig.new(hostname, conf['hosts']).clean! if
-      options[:clean]
+  conf['hosts'].keys.select { options[:hosts].empty? || options[:hosts].include?(_1) }
+               .each do |host|
+    WireguardConfig.new(host, conf['hosts']).generate! if options[:generate]
+    InstallConfig.new(host, conf['hosts']).upload!.install!.restart! if options[:install]
+    WireguardConfig.new(host, conf['hosts']).clean! if options[:clean]
   end
 rescue StandardError => e
   puts "Error: #{e.message}"

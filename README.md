@@ -77,6 +77,8 @@ https://github.com/angristan/wireguard-install/discussions/499
 
 ### OpenBSD
 
+https://docs.vultr.com/install-wireguard-vpn-server-on-openbsd-7-0
+
 ```sh
 ```
 
