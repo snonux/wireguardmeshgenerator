@@ -80,6 +80,14 @@ https://github.com/angristan/wireguard-install/discussions/499
 https://docs.vultr.com/install-wireguard-vpn-server-on-openbsd-7-0
 
 ```sh
+blowfish$ doas pkg_add wireguard-tools
+blowfish$ doas mkdir /etc/wireguard
+blowfish$ doas touch /etc/wireguard/wg0.conf
+blowsish$ cat <<END | doas tee /etc/hostname.wg0
+inet 192.168.2.110 255.255.255.0 NONE
+up
+!/usr/local/bin/wg setconf wg0 /etc/wireguard/wg0.conf
+END
 ```
 
 ### Install the config

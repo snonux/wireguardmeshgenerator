@@ -78,7 +78,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     <<~CONF
       [Interface]
       # #{myself}.#{hosts[myself]['wg0']['domain']}
-      Address = #{hosts[myself]['wg0']['ip']}
+      #{address}
       PrivateKey = #{keytool.priv}
       ListenPort = 56709
 
@@ -100,6 +100,12 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   end
 
   private
+
+  def address
+    return '# No Address = ... for OpenBSD here' if hosts[myself]['os'] == 'OpenBSD'
+
+    "Address = #{hosts[myself]['wg0']['ip']}"
+  end
 
   def peers
     excluded = hosts[myself].fetch('exclude_peers', []) << myself

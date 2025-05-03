@@ -87,7 +87,7 @@ hosts:
       user: rex
       conf_dir: /etc/wireguard
       sudo_cmd: doas
-      reload_cmd: rcctl reload wireguard
+      reload_cmd: sh /etc/netstart wg0
     internet:
       domain: 'buetow.org'
       ip: '23.88.35.144'
@@ -101,7 +101,7 @@ hosts:
       user: rex
       conf_dir: /etc/wireguard
       sudo_cmd: doas
-      reload_cmd: rcctl reload wireguard
+      reload_cmd: sh /etc/netstart wg0
     internet:
       domain: 'buetow.org'
       ip: '46.23.94.99'
