@@ -2,6 +2,8 @@
 
 STILL WIP! The readme here are just notes for myself for a future blog post on f3s. Stay tuned!
 
+![WireGuard Full Mesh](wireguard-full-mesh.png)
+
 ## Installation
 
 ### FreeBSD
