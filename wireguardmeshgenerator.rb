@@ -114,20 +114,20 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     "Address = #{hosts[myself]['wg0']['ip']}"
   end
 
+  # The `peers` method generates a list of peer configurations for a WireGuard mesh network.
+  # It determines the appropriate endpoint and keepalive settings for each peer.
   def peers
-    excluded = hosts[myself].fetch('exclude_peers', []) << myself
-    i_am_in_lan = hosts[myself].key?('lan')
-
-    hosts.reject { excluded.include?(_1) }.map do |peer, data|
-      peer_is_in_lan = data.key?('lan')
-      reach = data[peer_is_in_lan ? 'lan' : 'internet']
-      endpoint = if peer_is_in_lan == i_am_in_lan ||
-                    !peer_is_in_lan
-                   reach['ip']
-                 else
-                   :behind_nat
-                 end
-      keepalive = i_am_in_lan && !peer_is_in_lan
+    exclude = hosts[myself].fetch('exclude_peers', []).append(myself)
+    # Check if the current host is in the local area network (LAN).
+    in_lan = hosts[myself].key?('lan')
+    # Filter out excluded peers and map the remaining hosts to PeerSnippet objects.
+    hosts.reject { exclude.include?(_1) }.map do |peer, data|
+      # Determine if the peer is in the LAN.
+      peer_in_lan = data.key?('lan')
+      reach = data[peer_in_lan ? 'lan' : 'internet']
+      endpoint = peer_in_lan == in_lan || !peer_in_lan ? reach['ip'] : :behind_nat
+      # Determine if keepalive is needed (only for LAN-to-internet connections).
+      keepalive = in_lan && !peer_in_lan
       PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
                       data['wg0']['ip'], endpoint, keepalive)
     end
