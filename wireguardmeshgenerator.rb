@@ -220,13 +220,13 @@ InstallConfig = Struct.new(:myself, :hosts) do
 
   # Executes a shell command on the remote host using SSH.
   def ssh(cmd)
+    File.delete('cmd.sh') if File.exist?('cmd.sh')
     File.write('cmd.sh', <<~SH) and scp('cmd.sh')
       #!/bin/sh
       set -x
       #{cmd}
       rm $0
     SH
-    File.delete('cmd.sh') if File.exist?('cmd.sh')
     Net::SSH.start(@fqdn, @ssh_user) do |ssh|
       output = ssh.exec!('sh cmd.sh')
       raise output unless output.exitstatus.zero?
