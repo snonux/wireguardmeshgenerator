@@ -52,7 +52,7 @@ class KeyTool
 end
 
 PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
-                         :allowed_ips, :endpoint) do
+                         :allowed_ips, :endpoint, :keepalive) do
   def to_s
     keytool = KeyTool.new(myself)
     <<~PEER_CONF
@@ -62,6 +62,7 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
       PresharedKey = #{keytool.psk(peer)}
       AllowedIPs = #{allowed_ips}/32
       #{endpoint_str}
+      #{keepalive_str}
     PEER_CONF
   end
 
@@ -69,6 +70,12 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
     return '# Due to NAT no Endpoint configured' if endpoint == :behind_nat
 
     "Endpoint = #{endpoint}:56709"
+  end
+
+  def keepalive_str
+    return '# No KeepAlive configured' unless keepalive
+
+    'PersistentKeepalive = 25'
   end
 end
 
@@ -120,8 +127,9 @@ WireguardConfig = Struct.new(:myself, :hosts) do
                  else
                    :behind_nat
                  end
+      keepalive = i_am_in_lan && !peer_is_in_lan
       PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
-                      data['wg0']['ip'], endpoint)
+                      data['wg0']['ip'], endpoint, keepalive)
     end
   end
 end
