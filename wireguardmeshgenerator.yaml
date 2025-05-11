@@ -102,5 +102,4 @@ hosts:
       domain: 'buetow.org'
       ip: '46.23.94.99'
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.111'
+      domain: 'wg0.wan.buetow.org' ip: '192.168.2.111'
