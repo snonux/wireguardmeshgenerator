@@ -259,7 +259,7 @@ begin
 
   conf['hosts'].keys.select { options[:hosts].empty? || options[:hosts].include?(_1) }
                .each do |host|
-    # Generate Wireguard configuration for the hostreload!
+    # Generate Wireguard configuration for the host reload!
     WireguardConfig.new(host, conf['hosts']).generate! if options[:generate]
     # Install Wireguard configuration for the host.
     InstallConfig.new(host, conf['hosts']).upload!.install!.reload! if options[:install]
