@@ -13,6 +13,9 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.130'
+    exclude_peers:
+      - earth
+      - pixel7pro
   f1:
     os: FreeBSD
     ssh:
@@ -26,6 +29,9 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.131'
+    exclude_peers:
+      - earth
+      - pixel7pro
   f2:
     os: FreeBSD
     ssh:
@@ -39,6 +45,9 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.132'
+    exclude_peers:
+      - earth
+      - pixel7pro
   r0:
     os: Linux
     ssh:
@@ -52,6 +61,9 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.120'
+    exclude_peers:
+      - earth
+      - pixel7pro
   r1:
     os: Linux
     ssh:
@@ -65,6 +77,9 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.121'
+    exclude_peers:
+      - earth
+      - pixel7pro
   r2:
     os: Linux
     ssh:
@@ -78,10 +93,14 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.122'
+    exclude_peers:
+      - earth
+      - pixel7pro
   blowfish:
     os: OpenBSD
     ssh:
       user: rex
+      port: 2
       conf_dir: /etc/wireguard
       sudo_cmd: doas
       reload_cmd: sh /etc/netstart wg0
@@ -95,6 +114,7 @@ hosts:
     os: OpenBSD
     ssh:
       user: rex
+      port: 2
       conf_dir: /etc/wireguard
       sudo_cmd: doas
       reload_cmd: sh /etc/netstart wg0
@@ -102,4 +122,37 @@ hosts:
       domain: 'buetow.org'
       ip: '46.23.94.99'
     wg0:
-      domain: 'wg0.wan.buetow.org' ip: '192.168.2.111'
+      domain: 'wg0.wan.buetow.org'
+      ip: '192.168.2.111'
+  earth:
+    os: Linux
+    wg0:
+      domain: 'wg0.wan.buetow.org'
+      ip: '192.168.2.200'
+    exclude_peers:
+      - f0
+      - f1
+      - f2
+      - r0
+      - r1
+      - r2
+      - pixel7pro
+    # Note: No 'lan' or 'internet' section = roaming client
+    # Note: No 'ssh' section = manual installation
+    # Note: Only connects to blowfish and fishfinger (internet gateways)
+  pixel7pro:
+    os: Android
+    wg0:
+      domain: 'wg0.wan.buetow.org'
+      ip: '192.168.2.201'
+    exclude_peers:
+      - f0
+      - f1
+      - f2
+      - r0
+      - r1
+      - r2
+      - earth
+    # Note: No 'lan' or 'internet' section = roaming client
+    # Note: No 'ssh' section = manual installation
+    # Note: Only connects to blowfish and fishfinger (internet gateways)

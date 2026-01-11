@@ -70,12 +70,14 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
   # keepalive settings.
   def to_s
     keytool = KeyTool.new(myself)
+    # Check if allowed_ips already contains CIDR notation or is a special routing rule
+    allowed_ips_str = allowed_ips.include?('/') ? allowed_ips : "#{allowed_ips}/32"
     <<~PEER_CONF
       [Peer]
       # #{myself}.#{domain} as #{myself}.#{wgdomain}
       PublicKey = #{keytool.pub}
       PresharedKey = #{keytool.psk(peer)}
-      AllowedIPs = #{allowed_ips}/32
+      AllowedIPs = #{allowed_ips_str}
       #{endpoint_str}
       #{keepalive_str}
     PEER_CONF
@@ -109,6 +111,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
       #{address}
       PrivateKey = #{keytool.priv}
       ListenPort = 56709
+      #{dns}
 
       #{peers(&:to_s).join("\n")}
     CONF
@@ -143,22 +146,50 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     "Address = #{hosts[myself]['wg0']['ip']}"
   end
 
+  # Generates DNS configuration for roaming clients.
+  # Roaming clients (no 'lan' or 'internet' sections) get DNS servers configured.
+  # Uses Cloudflare (1.1.1.1) and Google (8.8.8.8) public DNS for reliability.
+  def dns
+    is_roaming = !hosts[myself].key?('lan') && !hosts[myself].key?('internet')
+    return '# No DNS configured' unless is_roaming
+
+    'DNS = 1.1.1.1, 8.8.8.8'
+  end
+
   # Generates a list of peer configurations for the WireGuard mesh network.
   # Excludes peers specified in the `exclude_peers` list and the current host itself.
   # Determines the appropriate endpoint and keepalive settings for each peer.
+  # Roaming clients (no 'lan' or 'internet' sections) get PersistentKeepalive to all peers.
   def peers
     exclude = hosts[myself].fetch('exclude_peers', []).append(myself)
     # Check if the current host is in the local area network (LAN).
     in_lan = hosts[myself].key?('lan')
+    # Detect if current host is a roaming client (no lan or internet section).
+    # Roaming clients need PersistentKeepalive to all peers to maintain NAT traversal.
+    is_roaming = !hosts[myself].key?('lan') && !hosts[myself].key?('internet')
     hosts.reject { exclude.include?(_1) }.map do |peer, data|
-      # Determine if the peer is in the LAN.
-      peer_in_lan = data.key?('lan')
-      reach = data[peer_in_lan ? 'lan' : 'internet']
-      endpoint = peer_in_lan == in_lan || !peer_in_lan ? reach['ip'] : :behind_nat
-      # Determine if keepalive is needed (only for LAN-to-internet connections).
-      keepalive = in_lan && !peer_in_lan
+      # Check if peer is roaming (no lan or internet section).
+      # Roaming peers are always behind NAT and cannot be reached directly.
+      peer_is_roaming = !data.key?('lan') && !data.key?('internet')
+
+      if peer_is_roaming
+        # Roaming peer is always behind NAT, use wg0 domain for identification
+        reach = data['wg0']
+        endpoint = :behind_nat
+      else
+        # Regular peer with lan or internet section
+        peer_in_lan = data.key?('lan')
+        reach = data[peer_in_lan ? 'lan' : 'internet']
+        endpoint = peer_in_lan == in_lan || !peer_in_lan ? reach['ip'] : :behind_nat
+      end
+
+      # Set keepalive: LAN hosts connecting to internet hosts, OR roaming clients connecting to anyone.
+      keepalive = is_roaming || (in_lan && !peer_in_lan)
+      # For roaming clients, route all traffic through VPN (0.0.0.0/0).
+      # For regular mesh peers, only route their specific IP.
+      allowed_ips = is_roaming ? '0.0.0.0/0, ::/0' : data['wg0']['ip']
       PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
-                      data['wg0']['ip'], endpoint, keepalive)
+                      allowed_ips, endpoint, keepalive)
     end
   end
 end
@@ -174,6 +205,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
     domain = data.dig('lan', 'domain') || data.dig('internet', 'domain')
     @fqdn = "#{myself}.#{domain}"
     @ssh_user = data['ssh']['user']
+    @ssh_port = data.dig('ssh', 'port') || 22
     @sudo_cmd = data['ssh']['sudo_cmd']
     @reload_cmd = data['ssh']['reload_cmd']
     @conf_dir = data['ssh']['conf_dir']
@@ -215,7 +247,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
   def scp(src, dst = '.')
     puts "Uploading #{src} to #{@fqdn}:#{dst}"
     raise "Upload #{src} to #{@fqdn}:#{dst} failed" unless
-      Net::SCP.upload!(@fqdn, @ssh_user, src, dst)
+      Net::SCP.upload!(@fqdn, @ssh_user, src, dst, ssh: { port: @ssh_port })
   end
 
   # Executes a shell command on the remote host using SSH.
@@ -227,7 +259,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
       #{cmd}
       rm $0
     SH
-    Net::SSH.start(@fqdn, @ssh_user) do |ssh|
+    Net::SSH.start(@fqdn, @ssh_user, port: @ssh_port) do |ssh|
       output = ssh.exec!('sh cmd.sh')
       raise output unless output.exitstatus.zero?
 
