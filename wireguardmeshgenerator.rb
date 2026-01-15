@@ -139,11 +139,20 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   # Generates the address configuration for the current host.
   # For OpenBSD, it returns a placeholder comment. Otherwise, it returns the
-  # IP address as that option isn't supported on OpenBSD.
+  # IP address (and optionally IPv6) as that option isn't supported on OpenBSD.
+  # Supports dual-stack: if ipv6 field is present, outputs both IPv4 and IPv6 addresses.
   def address
     return '# No Address = ... for OpenBSD here' if hosts[myself]['os'] == 'OpenBSD'
 
-    "Address = #{hosts[myself]['wg0']['ip']}"
+    ipv4 = hosts[myself]['wg0']['ip']
+    ipv6 = hosts[myself]['wg0']['ipv6']
+
+    # WireGuard supports multiple Address directives for dual-stack
+    if ipv6
+      "Address = #{ipv4}\nAddress = #{ipv6}/64"
+    else
+      "Address = #{ipv4}"
+    end
   end
 
   # Generates DNS configuration for roaming clients.
@@ -185,9 +194,17 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
       # Set keepalive: LAN hosts connecting to internet hosts, OR roaming clients connecting to anyone.
       keepalive = is_roaming || (in_lan && !peer_in_lan)
-      # For roaming clients, route all traffic through VPN (0.0.0.0/0).
-      # For regular mesh peers, only route their specific IP.
-      allowed_ips = is_roaming ? '0.0.0.0/0, ::/0' : data['wg0']['ip']
+      # For roaming clients, route all traffic through VPN (0.0.0.0/0, ::/0).
+      # For regular mesh peers, route their specific IPv4 (and IPv6 if present).
+      # Dual-stack peers get both addresses in AllowedIPs.
+      if is_roaming
+        allowed_ips = '0.0.0.0/0, ::/0'
+      else
+        # For mesh peers, allow both IPv4 and IPv6 if present
+        ipv4 = data['wg0']['ip']
+        ipv6 = data['wg0']['ipv6']
+        allowed_ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
+      end
       PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
                       allowed_ips, endpoint, keepalive)
     end

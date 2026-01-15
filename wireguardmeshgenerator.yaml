@@ -13,6 +13,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.130'
+      ipv6: 'fd42:beef:cafe:2::130'
     exclude_peers:
       - earth
       - pixel7pro
@@ -29,6 +30,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.131'
+      ipv6: 'fd42:beef:cafe:2::131'
     exclude_peers:
       - earth
       - pixel7pro
@@ -45,6 +47,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.132'
+      ipv6: 'fd42:beef:cafe:2::132'
     exclude_peers:
       - earth
       - pixel7pro
@@ -61,6 +64,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.120'
+      ipv6: 'fd42:beef:cafe:2::120'
     exclude_peers:
       - earth
       - pixel7pro
@@ -77,6 +81,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.121'
+      ipv6: 'fd42:beef:cafe:2::121'
     exclude_peers:
       - earth
       - pixel7pro
@@ -93,6 +98,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.122'
+      ipv6: 'fd42:beef:cafe:2::122'
     exclude_peers:
       - earth
       - pixel7pro
@@ -110,6 +116,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.110'
+      ipv6: 'fd42:beef:cafe:2::110'
   fishfinger:
     os: OpenBSD
     ssh:
@@ -124,11 +131,13 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.111'
+      ipv6: 'fd42:beef:cafe:2::111'
   earth:
     os: Linux
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.200'
+      ipv6: 'fd42:beef:cafe:2::200'
     exclude_peers:
       - f0
       - f1
@@ -145,6 +154,7 @@ hosts:
     wg0:
       domain: 'wg0.wan.buetow.org'
       ip: '192.168.2.201'
+      ipv6: 'fd42:beef:cafe:2::201'
     exclude_peers:
       - f0
       - f1
