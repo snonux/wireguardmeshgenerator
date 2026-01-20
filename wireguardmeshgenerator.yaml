@@ -17,6 +17,7 @@ hosts:
     exclude_peers:
       - earth
       - pixel7pro
+      - freebsd
   f1:
     os: FreeBSD
     ssh:
@@ -34,6 +35,7 @@ hosts:
     exclude_peers:
       - earth
       - pixel7pro
+      - freebsd
   f2:
     os: FreeBSD
     ssh:
@@ -51,6 +53,7 @@ hosts:
     exclude_peers:
       - earth
       - pixel7pro
+      - freebsd
   r0:
     os: Linux
     ssh:
@@ -68,6 +71,7 @@ hosts:
     exclude_peers:
       - earth
       - pixel7pro
+      - freebsd
   r1:
     os: Linux
     ssh:
@@ -85,6 +89,7 @@ hosts:
     exclude_peers:
       - earth
       - pixel7pro
+      - freebsd
   r2:
     os: Linux
     ssh:
@@ -102,6 +107,7 @@ hosts:
     exclude_peers:
       - earth
       - pixel7pro
+      - freebsd
   blowfish:
     os: OpenBSD
     ssh:
@@ -146,6 +152,7 @@ hosts:
       - r1
       - r2
       - pixel7pro
+      - freebsd
     # Note: No 'lan' or 'internet' section = roaming client
     # Note: No 'ssh' section = manual installation
     # Note: Only connects to blowfish and fishfinger (internet gateways)
@@ -163,6 +170,26 @@ hosts:
       - r1
       - r2
       - earth
+      - freebsd
     # Note: No 'lan' or 'internet' section = roaming client
     # Note: No 'ssh' section = manual installation
     # Note: Only connects to blowfish and fishfinger (internet gateways)
+  freebsd:
+    os: FreeBSD
+    wg0:
+      domain: 'wg0.wan.buetow.org'
+      ip: '192.168.2.202'
+      ipv6: 'fd42:beef:cafe:2::202'
+    exclude_peers:
+      - f0
+      - f1
+      - f2
+      - r0
+      - r1
+      - r2
+      - earth
+      - pixel7pro
+    gateway: false
+    # Note: No 'lan' or 'internet' section = roaming client
+    # Note: No 'ssh' section = manual installation
+    # Note: gateway: false = connect to gateways but don't route internet through them

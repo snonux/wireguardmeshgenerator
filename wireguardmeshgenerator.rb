@@ -141,26 +141,31 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   # For OpenBSD, it returns a placeholder comment. Otherwise, it returns the
   # IP address (and optionally IPv6) as that option isn't supported on OpenBSD.
   # Supports dual-stack: if ipv6 field is present, outputs both IPv4 and IPv6 addresses.
+  # FreeBSD requires subnet mask on IPv4 address for wg-quick.
   def address
     return '# No Address = ... for OpenBSD here' if hosts[myself]['os'] == 'OpenBSD'
 
     ipv4 = hosts[myself]['wg0']['ip']
     ipv6 = hosts[myself]['wg0']['ipv6']
+    # FreeBSD wg-quick requires subnet mask on IPv4 address
+    ipv4_with_mask = hosts[myself]['os'] == 'FreeBSD' ? "#{ipv4}/24" : ipv4
 
     # WireGuard supports multiple Address directives for dual-stack
     if ipv6
-      "Address = #{ipv4}\nAddress = #{ipv6}/64"
+      "Address = #{ipv4_with_mask}\nAddress = #{ipv6}/64"
     else
-      "Address = #{ipv4}"
+      "Address = #{ipv4_with_mask}"
     end
   end
 
   # Generates DNS configuration for roaming clients.
-  # Roaming clients (no 'lan' or 'internet' sections) get DNS servers configured.
+  # Roaming clients (no 'lan' or 'internet' sections) get DNS servers configured,
+  # unless gateway: false (no default route through VPN).
   # Uses Cloudflare (1.1.1.1) and Google (8.8.8.8) public DNS for reliability.
   def dns
     is_roaming = !hosts[myself].key?('lan') && !hosts[myself].key?('internet')
-    return '# No DNS configured' unless is_roaming
+    use_gateway = hosts[myself].fetch('gateway', true)
+    return '# No DNS configured' unless is_roaming && use_gateway
 
     'DNS = 1.1.1.1, 8.8.8.8'
   end
@@ -176,6 +181,10 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     # Detect if current host is a roaming client (no lan or internet section).
     # Roaming clients need PersistentKeepalive to all peers to maintain NAT traversal.
     is_roaming = !hosts[myself].key?('lan') && !hosts[myself].key?('internet')
+    # Check if this host should use gateways for default route (gateway: false disables this).
+    use_gateway = hosts[myself].fetch('gateway', true)
+    # Track if we've assigned the primary gateway (for mesh subnet routing).
+    primary_gateway_assigned = false
     hosts.reject { exclude.include?(_1) }.map do |peer, data|
       # Check if peer is roaming (no lan or internet section).
       # Roaming peers are always behind NAT and cannot be reached directly.
@@ -194,11 +203,26 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
       # Set keepalive: LAN hosts connecting to internet hosts, OR roaming clients connecting to anyone.
       keepalive = is_roaming || (in_lan && !peer_in_lan)
-      # For roaming clients, route all traffic through VPN (0.0.0.0/0, ::/0).
+      # For roaming clients with gateway: true, route all traffic through VPN (0.0.0.0/0, ::/0).
+      # For roaming clients with gateway: false, route mesh subnet through first gateway,
+      # and use specific IPs for other gateways.
       # For regular mesh peers, route their specific IPv4 (and IPv6 if present).
-      # Dual-stack peers get both addresses in AllowedIPs.
-      if is_roaming
+      if is_roaming && use_gateway
         allowed_ips = '0.0.0.0/0, ::/0'
+      elsif is_roaming && !use_gateway
+        # Roaming client but not using gateways for default route.
+        # First internet gateway gets the mesh subnet, others get specific IPs.
+        peer_is_gateway = data.key?('internet')
+        if peer_is_gateway && !primary_gateway_assigned
+          # Primary gateway: route all mesh traffic through it
+          allowed_ips = '192.168.2.0/24, fd42:beef:cafe:2::/64'
+          primary_gateway_assigned = true
+        else
+          # Secondary gateway or non-gateway: just its specific IP
+          ipv4 = data['wg0']['ip']
+          ipv6 = data['wg0']['ipv6']
+          allowed_ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
+        end
       else
         # For mesh peers, allow both IPv4 and IPv6 if present
         ipv4 = data['wg0']['ip']
@@ -308,10 +332,12 @@ begin
 
   conf['hosts'].keys.select { options[:hosts].empty? || options[:hosts].include?(_1) }
                .each do |host|
-    # Generate Wireguard configuration for the host reload!
+    # Generate Wireguard configuration for the host.
     WireguardConfig.new(host, conf['hosts']).generate! if options[:generate]
-    # Install Wireguard configuration for the host.
-    InstallConfig.new(host, conf['hosts']).upload!.install!.reload! if options[:install]
+    # Install Wireguard configuration for the host (only for hosts with ssh section).
+    if options[:install] && conf['hosts'][host].key?('ssh')
+      InstallConfig.new(host, conf['hosts']).upload!.install!.reload!
+    end
     # Clean Wireguard configuration for the host.
     WireguardConfig.new(host, conf['hosts']).clean! if options[:clean]
   end
