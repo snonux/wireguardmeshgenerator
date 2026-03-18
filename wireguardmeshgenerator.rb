@@ -147,8 +147,10 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
     ipv4 = hosts[myself]['wg0']['ip']
     ipv6 = hosts[myself]['wg0']['ipv6']
-    # FreeBSD wg-quick requires subnet mask on IPv4 address
-    ipv4_with_mask = hosts[myself]['os'] == 'FreeBSD' ? "#{ipv4}/24" : ipv4
+    # FreeBSD 15.0+ requires /32 host mask on IPv4 Address lines (not /24);
+    # without a prefix, service wireguard start fails with "setting interface
+    # address without mask is no longer supported"
+    ipv4_with_mask = hosts[myself]['os'] == 'FreeBSD' ? "#{ipv4}/32" : ipv4
 
     # WireGuard supports multiple Address directives for dual-stack
     if ipv6
