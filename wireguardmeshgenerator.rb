@@ -245,6 +245,7 @@ InstallConfig = Struct.new(:myself, :hosts) do
     @myself = myself
 
     data = hosts[myself]
+    @os = data['os']
     domain = data.dig('lan', 'domain') || data.dig('internet', 'domain')
     @fqdn = "#{myself}.#{domain}"
     @ssh_user = data['ssh']['user']
@@ -265,13 +266,18 @@ InstallConfig = Struct.new(:myself, :hosts) do
   # Ensures the configuration directory exists and has the correct permissions.
   def install!
     puts "Installing Wireguard config on #{@myself}"
+    owner_group = @os == 'Linux' ? 'root:root' : 'root:wheel'
     ssh <<~SH
       if [ ! -d #{@conf_dir} ]; then
         #{@sudo_cmd} mkdir -p #{@conf_dir}
       fi
       #{@sudo_cmd} chmod 700 #{@conf_dir}
       #{@sudo_cmd} mv -v wg0.conf #{@conf_dir}
-      #{@sudo_cmd} chmod 644 #{@conf_dir}/wg0.conf
+      #{@sudo_cmd} chown #{owner_group} #{@conf_dir}/wg0.conf
+      #{@sudo_cmd} chmod 600 #{@conf_dir}/wg0.conf
+      if command -v restorecon >/dev/null 2>&1; then
+        #{@sudo_cmd} restorecon -v #{@conf_dir}/wg0.conf || true
+      fi
     SH
   end
 
