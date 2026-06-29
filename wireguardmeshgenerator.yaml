@@ -149,6 +149,11 @@ hosts:
       ipv6: fd42:beef:cafe:2::110
   fishfinger:
     os: OpenBSD
+    # primary_gateway: true marks fishfinger as the single gateway peer that receives
+    # AllowedIPs = 0.0.0.0/0, ::/0 on roaming clients (earth, pixel7pro, uranus).
+    # wg-quick can only install one default route, so only the primary gateway gets
+    # the catch-all; secondary gateways (blowfish) get their specific /32+/128 only.
+    primary_gateway: true
     ssh:
       user: rex
       port: 2
@@ -168,6 +173,8 @@ hosts:
     # gateway peer's AllowedIPs on infra hosts that peer with that gateway.
     # Earth is behind NAT and cannot be a direct peer on infra hosts; instead,
     # traffic routes via fishfinger -> earth.
+    # WireGuard requires each AllowedIPs prefix to belong to exactly one peer, so
+    # only one gateway can hold earth's IPs; fishfinger is the primary gateway.
     reachable_via: fishfinger
     wg0:
       domain: wg0.wan.buetow.org

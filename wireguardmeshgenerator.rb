@@ -218,6 +218,9 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   # return traffic must flow via that gateway back to them. This ensures the gateway
   # peer's AllowedIPs covers the roaming client's wg0 IPs, so infra hosts route
   # traffic destined for those clients through the gateway.
+  # Note: WireGuard requires each AllowedIPs prefix to belong to exactly one peer,
+  # so reachable_via must name only one gateway — duplicating IPs across two peers
+  # causes WireGuard to silently assign the prefix to only one of them.
   def extra_ips_via_gateway(gateway_name)
     hosts.filter_map do |_name, data|
       next unless data['reachable_via'] == gateway_name
@@ -230,7 +233,11 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   # Computes AllowedIPs for a peer entry on the current (myself) host.
   # Returns [allowed_ips_string, updated_primary_gateway_assigned].
-  # - Roaming clients with gateway:true: all traffic via VPN (0.0.0.0/0, ::/0).
+  #
+  # - Roaming clients with gateway:true: the peer flagged primary_gateway:true gets
+  #   0.0.0.0/0, ::/0 (full default route); all other peers get their specific IPs.
+  #   wg-quick can only install one default route — giving 0.0.0.0/0 to multiple peers
+  #   causes all but the first to silently receive allowed_ips:(none) in the running config.
   # - Roaming clients with gateway:false: mesh subnet for primary gateway, specific IPs for others.
   # - Regular mesh peers: their specific IPs; gateway peers also get extra IPs for
   #   roaming clients declared via reachable_via, so infra hosts can route to them via the gateway.
@@ -238,17 +245,24 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     peer_is_gateway = data.key?('internet')
     ipv4 = data['wg0']['ip']
     ipv6 = data['wg0']['ipv6']
+    specific_ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
 
     if is_roaming && use_gateway
-      return '0.0.0.0/0, ::/0', primary_gateway_assigned
+      # Only the primary gateway (primary_gateway: true) gets the full default route.
+      # Secondary gateways and all other peers get only their specific wg0 IPs so
+      # WireGuard doesn't hit conflicting default route assignments.
+      return '0.0.0.0/0, ::/0', primary_gateway_assigned if peer_is_gateway && data['primary_gateway']
+
+      return specific_ips, primary_gateway_assigned
     elsif is_roaming && !use_gateway
       return roaming_no_gateway_ips(peer_is_gateway, ipv4, ipv6, primary_gateway_assigned)
     end
 
     # Regular (non-roaming) host: route specific IPs only.
     # For gateway peers, also append IPs of roaming clients reachable via this gateway,
-    # so infra hosts can reach them (e.g. earth via fishfinger) without a direct peer block.
-    ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
+    # so infra hosts can reach them (e.g. earth via fishfinger or blowfish) without a
+    # direct peer block.
+    ips = specific_ips
     if peer_is_gateway
       extra = extra_ips_via_gateway(peer)
       ips = ([ips] + extra).join(', ') unless extra.empty?
