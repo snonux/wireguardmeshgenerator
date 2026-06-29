@@ -1,4 +1,3 @@
----
 hosts:
   f0:
     os: FreeBSD
@@ -8,16 +7,17 @@ hosts:
       sudo_cmd: doas
       reload_cmd: service wireguard reload
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.130'
+      domain: lan.buetow.org
+      ip: 192.168.1.130
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.130'
-      ipv6: 'fd42:beef:cafe:2::130'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.130
+      ipv6: fd42:beef:cafe:2::130
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   f1:
     os: FreeBSD
     ssh:
@@ -26,16 +26,17 @@ hosts:
       sudo_cmd: doas
       reload_cmd: service wireguard reload
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.131'
+      domain: lan.buetow.org
+      ip: 192.168.1.131
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.131'
-      ipv6: 'fd42:beef:cafe:2::131'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.131
+      ipv6: fd42:beef:cafe:2::131
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   f2:
     os: FreeBSD
     ssh:
@@ -44,16 +45,17 @@ hosts:
       sudo_cmd: doas
       reload_cmd: service wireguard reload
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.132'
+      domain: lan.buetow.org
+      ip: 192.168.1.132
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.132'
-      ipv6: 'fd42:beef:cafe:2::132'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.132
+      ipv6: fd42:beef:cafe:2::132
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   f3:
     os: FreeBSD
     ssh:
@@ -62,70 +64,74 @@ hosts:
       sudo_cmd: doas
       reload_cmd: service wireguard reload
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.133'
+      domain: lan.buetow.org
+      ip: 192.168.1.133
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.133'
-      ipv6: 'fd42:beef:cafe:2::133'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.133
+      ipv6: fd42:beef:cafe:2::133
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   r0:
     os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
-      sudo_cmd:
+      sudo_cmd: null
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.120'
+      domain: lan.buetow.org
+      ip: 192.168.1.120
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.120'
-      ipv6: 'fd42:beef:cafe:2::120'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.120
+      ipv6: fd42:beef:cafe:2::120
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   r1:
     os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
-      sudo_cmd:
+      sudo_cmd: null
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.121'
+      domain: lan.buetow.org
+      ip: 192.168.1.121
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.121'
-      ipv6: 'fd42:beef:cafe:2::121'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.121
+      ipv6: fd42:beef:cafe:2::121
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   r2:
     os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
-      sudo_cmd:
+      sudo_cmd: null
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.122'
+      domain: lan.buetow.org
+      ip: 192.168.1.122
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.122'
-      ipv6: 'fd42:beef:cafe:2::122'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.122
+      ipv6: fd42:beef:cafe:2::122
     exclude_peers:
-      - earth
-      - pixel7pro
-      - freebsd
+    - earth
+    - pixel7pro
+    - freebsd
+    - uranus
   blowfish:
     os: OpenBSD
     ssh:
@@ -135,12 +141,12 @@ hosts:
       sudo_cmd: doas
       reload_cmd: sh /etc/netstart wg0
     internet:
-      domain: 'buetow.org'
-      ip: '23.88.35.144'
+      domain: buetow.org
+      ip: 23.88.35.144
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.110'
-      ipv6: 'fd42:beef:cafe:2::110'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.110
+      ipv6: fd42:beef:cafe:2::110
   fishfinger:
     os: OpenBSD
     ssh:
@@ -150,67 +156,82 @@ hosts:
       sudo_cmd: doas
       reload_cmd: sh /etc/netstart wg0
     internet:
-      domain: 'buetow.org'
-      ip: '46.23.94.99'
+      domain: buetow.org
+      ip: 46.23.94.99
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.111'
-      ipv6: 'fd42:beef:cafe:2::111'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.111
+      ipv6: fd42:beef:cafe:2::111
   earth:
     os: Linux
+    # reachable_via declares that earth's wg0 IPs should be appended to the named
+    # gateway peer's AllowedIPs on infra hosts that peer with that gateway.
+    # Earth is behind NAT and cannot be a direct peer on infra hosts; instead,
+    # traffic routes via fishfinger -> earth.
+    reachable_via: fishfinger
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.200'
-      ipv6: 'fd42:beef:cafe:2::200'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.200
+      ipv6: fd42:beef:cafe:2::200
     exclude_peers:
-      - f0
-      - f1
-      - f2
-      - r0
-      - r1
-      - r2
-      - pixel7pro
-      - freebsd
-    # Note: No 'lan' or 'internet' section = roaming client
-    # Note: No 'ssh' section = manual installation
-    # Note: Only connects to blowfish and fishfinger (internet gateways)
+    - f0
+    - f1
+    - f2
+    - r0
+    - r1
+    - r2
+    - pixel7pro
+    - freebsd
+    - uranus
+  uranus:
+    os: Linux
+    wg0:
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.205
+      ipv6: fd42:beef:cafe:2::205
+    exclude_peers:
+    - f0
+    - f1
+    - f2
+    - r0
+    - r1
+    - r2
+    - earth
+    - pixel7pro
+    - freebsd
   pixel7pro:
     os: Android
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.201'
-      ipv6: 'fd42:beef:cafe:2::201'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.201
+      ipv6: fd42:beef:cafe:2::201
     exclude_peers:
-      - f0
-      - f1
-      - f2
-      - r0
-      - r1
-      - r2
-      - earth
-      - freebsd
-    # Note: No 'lan' or 'internet' section = roaming client
-    # Note: No 'ssh' section = manual installation
-    # Note: Only connects to blowfish and fishfinger (internet gateways)
+    - f0
+    - f1
+    - f2
+    - r0
+    - r1
+    - r2
+    - earth
+    - freebsd
+    - uranus
   freebsd:
     os: FreeBSD
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.202'
-      ipv6: 'fd42:beef:cafe:2::202'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.202
+      ipv6: fd42:beef:cafe:2::202
     exclude_peers:
-      - f0
-      - f1
-      - f2
-      - r0
-      - r1
-      - r2
-      - earth
-      - pixel7pro
+    - f0
+    - f1
+    - f2
+    - r0
+    - r1
+    - r2
+    - earth
+    - pixel7pro
+    - uranus
     gateway: false
-    # Note: No 'lan' or 'internet' section = roaming client
-    # Note: No 'ssh' section = manual installation
-    # Note: gateway: false = connect to gateways but don't route internet through them
   pi0:
     os: Linux
     ssh:
@@ -219,24 +240,25 @@ hosts:
       sudo_cmd: sudo
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.125'
+      domain: lan.buetow.org
+      ip: 192.168.1.125
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.203'
-      ipv6: 'fd42:beef:cafe:2::203'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.203
+      ipv6: fd42:beef:cafe:2::203
     exclude_peers:
-      - f0
-      - f1
-      - f2
-      - f3
-      - r0
-      - r1
-      - r2
-      - earth
-      - pixel7pro
-      - freebsd
-      - pi1
+    - f0
+    - f1
+    - f2
+    - f3
+    - r0
+    - r1
+    - r2
+    - earth
+    - pixel7pro
+    - freebsd
+    - pi1
+    - uranus
   pi1:
     os: Linux
     ssh:
@@ -245,48 +267,50 @@ hosts:
       sudo_cmd: sudo
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.126'
+      domain: lan.buetow.org
+      ip: 192.168.1.126
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.204'
-      ipv6: 'fd42:beef:cafe:2::204'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.204
+      ipv6: fd42:beef:cafe:2::204
     exclude_peers:
-      - f0
-      - f1
-      - f2
-      - f3
-      - r0
-      - r1
-      - r2
-      - earth
-      - pixel7pro
-      - freebsd
-      - pi0
+    - f0
+    - f1
+    - f2
+    - f3
+    - r0
+    - r1
+    - r2
+    - earth
+    - pixel7pro
+    - freebsd
+    - pi0
+    - uranus
   rocky:
     os: Linux
     ssh:
       user: root
       conf_dir: /etc/wireguard
-      sudo_cmd:
+      sudo_cmd: null
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
-      domain: 'lan.buetow.org'
-      ip: '192.168.1.123'
+      domain: lan.buetow.org
+      ip: 192.168.1.123
     wg0:
-      domain: 'wg0.wan.buetow.org'
-      ip: '192.168.2.123'
-      ipv6: 'fd42:beef:cafe:2::123'
+      domain: wg0.wan.buetow.org
+      ip: 192.168.2.123
+      ipv6: fd42:beef:cafe:2::123
     exclude_peers:
-      - f0
-      - f1
-      - f2
-      - f3
-      - r0
-      - r1
-      - r2
-      - earth
-      - pixel7pro
-      - freebsd
-      - pi0
-      - pi1
+    - f0
+    - f1
+    - f2
+    - f3
+    - r0
+    - r1
+    - r2
+    - earth
+    - pixel7pro
+    - freebsd
+    - pi0
+    - pi1
+    - uranus

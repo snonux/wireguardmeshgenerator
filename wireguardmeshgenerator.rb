@@ -172,10 +172,8 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     'DNS = 1.1.1.1, 8.8.8.8'
   end
 
-  # Generates a list of peer configurations for the WireGuard mesh network.
-  # Excludes peers specified in the `exclude_peers` list and the current host itself.
-  # Determines the appropriate endpoint and keepalive settings for each peer.
-  # Roaming clients (no 'lan' or 'internet' sections) get PersistentKeepalive to all peers.
+  # Builds peer entries for the WireGuard mesh. Excludes hosts in exclude_peers and self.
+  # Determines endpoint, keepalive, and AllowedIPs per peer based on network topology.
   def peers
     exclude = hosts[myself].fetch('exclude_peers', []).append(myself)
     # Check if the current host is in the local area network (LAN).
@@ -185,8 +183,9 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     is_roaming = !hosts[myself].key?('lan') && !hosts[myself].key?('internet')
     # Check if this host should use gateways for default route (gateway: false disables this).
     use_gateway = hosts[myself].fetch('gateway', true)
-    # Track if we've assigned the primary gateway (for mesh subnet routing).
+    # Track if we've assigned the primary gateway (for mesh subnet routing via gateway:false).
     primary_gateway_assigned = false
+
     hosts.reject { exclude.include?(_1) }.map do |peer, data|
       # Check if peer is roaming (no lan or internet section).
       # Roaming peers are always behind NAT and cannot be reached directly.
@@ -205,35 +204,68 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
       # Set keepalive: LAN hosts connecting to internet hosts, OR roaming clients connecting to anyone.
       keepalive = is_roaming || (in_lan && !peer_in_lan)
-      # For roaming clients with gateway: true, route all traffic through VPN (0.0.0.0/0, ::/0).
-      # For roaming clients with gateway: false, route mesh subnet through first gateway,
-      # and use specific IPs for other gateways.
-      # For regular mesh peers, route their specific IPv4 (and IPv6 if present).
-      if is_roaming && use_gateway
-        allowed_ips = '0.0.0.0/0, ::/0'
-      elsif is_roaming && !use_gateway
-        # Roaming client but not using gateways for default route.
-        # First internet gateway gets the mesh subnet, others get specific IPs.
-        peer_is_gateway = data.key?('internet')
-        if peer_is_gateway && !primary_gateway_assigned
-          # Primary gateway: route all mesh traffic through it
-          allowed_ips = '192.168.2.0/24, fd42:beef:cafe:2::/64'
-          primary_gateway_assigned = true
-        else
-          # Secondary gateway or non-gateway: just its specific IP
-          ipv4 = data['wg0']['ip']
-          ipv6 = data['wg0']['ipv6']
-          allowed_ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
-        end
-      else
-        # For mesh peers, allow both IPv4 and IPv6 if present
-        ipv4 = data['wg0']['ip']
-        ipv6 = data['wg0']['ipv6']
-        allowed_ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
-      end
+      allowed_ips, primary_gateway_assigned = compute_allowed_ips(
+        peer, data, is_roaming, use_gateway, primary_gateway_assigned
+      )
+
       PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
                       allowed_ips, endpoint, keepalive)
     end
+  end
+
+  # Returns additional AllowedIPs to append to a gateway peer's entry on infra hosts.
+  # Hosts that declare `reachable_via: <gateway>` are NAT-roaming clients whose
+  # return traffic must flow via that gateway back to them. This ensures the gateway
+  # peer's AllowedIPs covers the roaming client's wg0 IPs, so infra hosts route
+  # traffic destined for those clients through the gateway.
+  def extra_ips_via_gateway(gateway_name)
+    hosts.filter_map do |_name, data|
+      next unless data['reachable_via'] == gateway_name
+
+      ipv4 = data['wg0']['ip']
+      ipv6 = data['wg0']['ipv6']
+      ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
+    end
+  end
+
+  # Computes AllowedIPs for a peer entry on the current (myself) host.
+  # Returns [allowed_ips_string, updated_primary_gateway_assigned].
+  # - Roaming clients with gateway:true: all traffic via VPN (0.0.0.0/0, ::/0).
+  # - Roaming clients with gateway:false: mesh subnet for primary gateway, specific IPs for others.
+  # - Regular mesh peers: their specific IPs; gateway peers also get extra IPs for
+  #   roaming clients declared via reachable_via, so infra hosts can route to them via the gateway.
+  def compute_allowed_ips(peer, data, is_roaming, use_gateway, primary_gateway_assigned)
+    peer_is_gateway = data.key?('internet')
+    ipv4 = data['wg0']['ip']
+    ipv6 = data['wg0']['ipv6']
+
+    if is_roaming && use_gateway
+      return '0.0.0.0/0, ::/0', primary_gateway_assigned
+    elsif is_roaming && !use_gateway
+      return roaming_no_gateway_ips(peer_is_gateway, ipv4, ipv6, primary_gateway_assigned)
+    end
+
+    # Regular (non-roaming) host: route specific IPs only.
+    # For gateway peers, also append IPs of roaming clients reachable via this gateway,
+    # so infra hosts can reach them (e.g. earth via fishfinger) without a direct peer block.
+    ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
+    if peer_is_gateway
+      extra = extra_ips_via_gateway(peer)
+      ips = ([ips] + extra).join(', ') unless extra.empty?
+    end
+    [ips, primary_gateway_assigned]
+  end
+
+  # Computes AllowedIPs for a roaming client that has gateway: false.
+  # Primary internet gateway gets the full mesh subnet for routing all mesh traffic;
+  # subsequent gateways and regular peers get only their specific IPs.
+  def roaming_no_gateway_ips(peer_is_gateway, ipv4, ipv6, primary_gateway_assigned)
+    if peer_is_gateway && !primary_gateway_assigned
+      return '192.168.2.0/24, fd42:beef:cafe:2::/64', true
+    end
+
+    ips = ipv6 ? "#{ipv4}/32, #{ipv6}/128" : "#{ipv4}/32"
+    [ips, primary_gateway_assigned]
   end
 end
 
