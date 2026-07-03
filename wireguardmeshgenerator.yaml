@@ -240,12 +240,13 @@ hosts:
     - uranus
     gateway: false
   pi0:
-    os: Linux
+    os: NetBSD
     ssh:
       user: paul
-      conf_dir: /etc/wireguard
-      sudo_cmd: sudo
-      reload_cmd: systemctl reload wg-quick@wg0.service
+      conf_dir: /usr/pkg/etc/wireguard
+      sudo_cmd: doas
+      reload_cmd: /etc/rc.d/wireguard restart
+      wg_bin: /usr/pkg/bin/wg
     lan:
       domain: lan.buetow.org
       ip: 192.168.1.125
@@ -267,12 +268,13 @@ hosts:
     - pi1
     - uranus
   pi1:
-    os: Linux
+    os: NetBSD
     ssh:
       user: paul
-      conf_dir: /etc/wireguard
-      sudo_cmd: sudo
-      reload_cmd: systemctl reload wg-quick@wg0.service
+      conf_dir: /usr/pkg/etc/wireguard
+      sudo_cmd: doas
+      reload_cmd: /etc/rc.d/wireguard restart
+      wg_bin: /usr/pkg/bin/wg
     lan:
       domain: lan.buetow.org
       ip: 192.168.1.126

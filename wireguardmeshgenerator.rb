@@ -11,6 +11,10 @@ require 'yaml'
 
 require 'optparse'
 
+# Interface name wireguard-go requires on NetBSD ("Interface name must be
+# tun[0-9]*" -- arbitrary names like wg0 are rejected).
+NETBSD_WG_INTERFACE = 'tun0'
+
 # KeyTool is a utility class for managing WireGuard keys.
 # It ensures the presence of required directories and files for public/private keys
 # and preshared keys (PSKs). If keys are missing, it generates them using the `wg` tool.
@@ -70,8 +74,6 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
   # keepalive settings.
   def to_s
     keytool = KeyTool.new(myself)
-    # Check if allowed_ips already contains CIDR notation or is a special routing rule
-    allowed_ips_str = allowed_ips.include?('/') ? allowed_ips : "#{allowed_ips}/32"
     <<~PEER_CONF
       [Peer]
       # #{myself}.#{domain} as #{myself}.#{wgdomain}
@@ -82,6 +84,16 @@ PeerSnippet = Struct.new(:myself, :peer, :domain, :wgdomain,
       #{keepalive_str}
     PEER_CONF
   end
+
+  # Normalizes allowed_ips into the final CIDR string used in the rendered
+  # config (appends /32 if the field is a bare IP without a mask).
+  def allowed_ips_str
+    allowed_ips.include?('/') ? allowed_ips : "#{allowed_ips}/32"
+  end
+
+  # Splits allowed_ips_str into individual CIDR entries, e.g. for generating
+  # one route per prefix on platforms with no wg-quick-style auto-routing.
+  def allowed_ips_list = allowed_ips_str.split(',').map(&:strip)
 
   # Generates the endpoint configuration string for the peer.
   # If the peer is behind NAT, a comment is returned instead.
@@ -105,16 +117,31 @@ end
 WireguardConfig = Struct.new(:myself, :hosts) do
   def to_s
     keytool = KeyTool.new(myself)
-    <<~CONF
-      [Interface]
-      # #{myself}.#{hosts[myself]['wg0']['domain']}
-      #{address}
-      PrivateKey = #{keytool.priv}
-      ListenPort = 56709
-      #{dns}
+    # NetBSD has no wg-quick: `wg setconf` only understands the real WireGuard
+    # protocol directives (PrivateKey, ListenPort, [Peer] blocks) and rejects
+    # wg-quick extensions like Address/DNS with "Line unrecognized" -- those
+    # get applied separately via ifconfig in the rc.d script instead.
+    if netbsd?
+      <<~CONF
+        [Interface]
+        # #{myself}.#{hosts[myself]['wg0']['domain']}
+        PrivateKey = #{keytool.priv}
+        ListenPort = 56709
 
-      #{peers(&:to_s).join("\n")}
-    CONF
+        #{peers(&:to_s).join("\n")}
+      CONF
+    else
+      <<~CONF
+        [Interface]
+        # #{myself}.#{hosts[myself]['wg0']['domain']}
+        #{address}
+        PrivateKey = #{keytool.priv}
+        ListenPort = 56709
+        #{dns}
+
+        #{peers(&:to_s).join("\n")}
+      CONF
+    end
   end
 
   # Cleans up generated directories and files.
@@ -125,10 +152,13 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     end
   end
 
-  # Generates the WireGuard configuration file for the current host.
-  # Creates the necessary directory structure and writes the configuration
-  # to `wg0.conf`.
+  # Generates the WireGuard configuration file(s) for the current host.
+  # NetBSD needs both the stripped wg-setconf file and a custom rc.d script
+  # (no native wg-quick/ifconfig.wg0 integration to hook into); every other
+  # OS just gets the one wg-quick-style wg0.conf.
   def generate!
+    return generate_netbsd! if netbsd?
+
     dist_dir = "dist/#{myself}/etc/wireguard"
     puts "Generating #{dist_dir}/wg0.conf"
     FileUtils.mkdir_p(dist_dir) unless Dir.exist?(dist_dir)
@@ -136,6 +166,118 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   end
 
   private
+
+  def netbsd? = hosts[myself]['os'] == 'NetBSD'
+
+  # Generates tun0.conf (fed to `wg setconf`) at the host's real conf_dir path,
+  # plus a custom /etc/rc.d/wireguard script that creates+addresses tun0,
+  # starts wireguard-go, applies the config, and adds the host routes wg-quick
+  # would normally manage automatically (wg only does the crypto/routing
+  # decision inside the tunnel, not the OS route table).
+  def generate_netbsd!
+    conf_dist_dir = "dist/#{myself}#{hosts[myself]['ssh']['conf_dir']}"
+    rcd_dist_dir = "dist/#{myself}/etc/rc.d"
+    puts "Generating #{conf_dist_dir}/#{NETBSD_WG_INTERFACE}.conf"
+    FileUtils.mkdir_p(conf_dist_dir) unless Dir.exist?(conf_dist_dir)
+    File.write("#{conf_dist_dir}/#{NETBSD_WG_INTERFACE}.conf", to_s)
+    puts "Generating #{rcd_dist_dir}/wireguard"
+    FileUtils.mkdir_p(rcd_dist_dir) unless Dir.exist?(rcd_dist_dir)
+    File.write("#{rcd_dist_dir}/wireguard", netbsd_rc_script)
+  end
+
+  # Renders the /etc/rc.d/wireguard script for a NetBSD host, with one
+  # route add/delete pair per unique AllowedIPs prefix across all peers.
+  def netbsd_rc_script
+    wg_ip4 = hosts[myself]['wg0']['ip']
+    wg_ip6 = hosts[myself]['wg0']['ipv6']
+    conf_path = "#{hosts[myself]['ssh']['conf_dir']}/#{NETBSD_WG_INTERFACE}.conf"
+    routes = peer_routes
+    add_lines = routes.map { |fam, cidr| route_cmd('add', fam, cidr, wg_ip4, wg_ip6) }
+    del_lines = routes.map { |fam, cidr| route_cmd('delete', fam, cidr, wg_ip4, wg_ip6) }
+    <<~SCRIPT
+      #!/bin/sh
+      #
+      # PROVIDE: wireguard
+      # REQUIRE: NETWORKING
+      # KEYWORD: shutdown
+
+      . /etc/rc.subr
+
+      name="wireguard"
+      rcvar=$name
+      start_cmd="wireguard_start"
+      stop_cmd="wireguard_stop"
+      status_cmd="wireguard_status"
+      extra_commands="status"
+
+      # Generated by wireguardmeshgenerator for #{myself} -- re-run
+      # --generate --install rather than editing this by hand.
+      IF=#{NETBSD_WG_INTERFACE}
+      WG_IP4=#{wg_ip4}
+      WG_IP6=#{wg_ip6}
+      WG_CONF=#{conf_path}
+
+      wireguard_start()
+      {
+      	/sbin/ifconfig ${IF} create
+      	/sbin/ifconfig ${IF} inet ${WG_IP4} ${WG_IP4} netmask 255.255.255.255
+      	/sbin/ifconfig ${IF} inet6 ${WG_IP6}
+      	/sbin/ifconfig ${IF} up
+      	/usr/pkg/bin/wireguard-go ${IF}
+      	# wireguard-go daemonizes; give it a moment to open the UAPI socket
+      	# before handing it the crypto config.
+      	i=0
+      	while [ ! -S /var/run/wireguard/${IF}.sock ] && [ $i -lt 20 ]; do
+      		sleep 1
+      		i=$((i + 1))
+      	done
+      	/usr/pkg/bin/wg setconf ${IF} ${WG_CONF}
+
+      	# WireGuard itself only does crypto routing; on NetBSD the AllowedIPs
+      	# need explicit host routes via the tun0 point-to-point address, unlike
+      	# Linux's wg-quick which adds these automatically.
+      #{add_lines.join("\n")}
+      }
+
+      wireguard_stop()
+      {
+      #{del_lines.join("\n")}
+      	pkill -f "/usr/pkg/bin/wireguard-go ${IF}"
+      	/sbin/ifconfig ${IF} destroy
+      }
+
+      wireguard_status()
+      {
+      	if pgrep -f "/usr/pkg/bin/wireguard-go ${IF}" >/dev/null; then
+      		echo "${name} is running."
+      		/usr/pkg/bin/wg show ${IF}
+      	else
+      		echo "${name} is not running."
+      	fi
+      }
+
+      load_rc_config $name
+      run_rc_command "$1"
+    SCRIPT
+  end
+
+  # One route add/delete line per unique (family, CIDR) pair across every
+  # peer's AllowedIPs. Skips full default-route entries (0.0.0.0/0, ::/0) --
+  # not applicable to mesh members, only to full-tunnel roaming clients,
+  # which NetBSD hosts in this mesh never are.
+  def route_cmd(verb, family, cidr, wg_ip4, wg_ip6)
+    flag = family == :inet6 ? '-inet6' : '-inet'
+    gw = family == :inet6 ? wg_ip6 : wg_ip4
+    "\t/sbin/route #{verb} #{flag} #{cidr} #{gw} -iface"
+  end
+
+  def peer_routes
+    peers.flat_map(&:allowed_ips_list).uniq.filter_map do |cidr|
+      next if cidr.start_with?('0.0.0.0/0', '::/0')
+
+      [cidr.include?(':') ? :inet6 : :inet, cidr]
+    end
+  end
 
   # Generates the address configuration for the current host.
   # For OpenBSD, it returns a placeholder comment. Otherwise, it returns the
@@ -299,19 +441,30 @@ InstallConfig = Struct.new(:myself, :hosts) do
     @sudo_cmd = data['ssh']['sudo_cmd']
     @reload_cmd = data['ssh']['reload_cmd']
     @conf_dir = data['ssh']['conf_dir']
+    # doas/sudo on NetBSD resets PATH to exclude /usr/pkg/bin, so `wg` alone
+    # won't resolve there -- allow an explicit full path per host.
+    @wg_bin = data['ssh']['wg_bin'] || 'wg'
   end
 
-  # Uploads the Wireguard configuration file to the remote host.
+  # Uploads the Wireguard configuration file(s) to the remote host.
+  # NetBSD also needs the generated rc.d script (no wg-quick/ifconfig.wg0 to
+  # hook into there).
   def upload!
-    wg0_conf = "dist/#{@myself}/etc/wireguard/wg0.conf"
-    scp(wg0_conf)
+    if netbsd?
+      scp("dist/#{@myself}#{@conf_dir}/#{NETBSD_WG_INTERFACE}.conf")
+      scp("dist/#{@myself}/etc/rc.d/wireguard")
+    else
+      scp("dist/#{@myself}/etc/wireguard/wg0.conf")
+    end
     self
   end
 
-  # Installs the Wireguard configuration file on the remote host.
+  # Installs the Wireguard configuration file(s) on the remote host.
   # Ensures the configuration directory exists and has the correct permissions.
   def install!
     puts "Installing Wireguard config on #{@myself}"
+    return install_netbsd! if netbsd?
+
     owner_group = @os == 'Linux' ? 'root:root' : 'root:wheel'
     ssh <<~SH
       if [ ! -d #{@conf_dir} ]; then
@@ -332,11 +485,33 @@ InstallConfig = Struct.new(:myself, :hosts) do
     puts "Reloading Wireguard on #{@myself}"
     ssh <<~SH
       #{@sudo_cmd} #{@reload_cmd}
-      #{@sudo_cmd} wg show
+      #{@sudo_cmd} #{@wg_bin} show
     SH
   end
 
   private
+
+  def netbsd? = @os == 'NetBSD'
+
+  # NetBSD install: tun0.conf goes to the pkgsrc conf_dir (600, root:wheel,
+  # same as every other OS); the rc.d script goes to /etc/rc.d (755,
+  # root:wheel, executable -- there's no restorecon/SELinux concern here).
+  def install_netbsd!
+    # doas's PATH excludes /usr/sbin on NetBSD, so plain "chown" resolves to
+    # nothing -- always use the full path for it here.
+    ssh <<~SH
+      if [ ! -d #{@conf_dir} ]; then
+        #{@sudo_cmd} mkdir -p #{@conf_dir}
+      fi
+      #{@sudo_cmd} chmod 700 #{@conf_dir}
+      #{@sudo_cmd} mv -v #{NETBSD_WG_INTERFACE}.conf #{@conf_dir}
+      #{@sudo_cmd} /usr/sbin/chown root:wheel #{@conf_dir}/#{NETBSD_WG_INTERFACE}.conf
+      #{@sudo_cmd} chmod 600 #{@conf_dir}/#{NETBSD_WG_INTERFACE}.conf
+      #{@sudo_cmd} mv -v wireguard /etc/rc.d/wireguard
+      #{@sudo_cmd} /usr/sbin/chown root:wheel /etc/rc.d/wireguard
+      #{@sudo_cmd} chmod 755 /etc/rc.d/wireguard
+    SH
+  end
 
   # Uploads a file to the remote host using SCP.
   def scp(src, dst = '.')
