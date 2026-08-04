@@ -115,7 +115,7 @@ end
 # WireguardConfig is a configuration generator for WireGuard mesh networks.
 # It generates configuration files for WireGuard interfaces and peers.
 WireguardConfig = Struct.new(:myself, :hosts) do
-  def to_s
+  def to_s(android_gateway = nil)
     keytool = KeyTool.new(myself)
     # NetBSD has no wg-quick: `wg setconf` only understands the real WireGuard
     # protocol directives (PrivateKey, ListenPort, [Peer] blocks) and rejects
@@ -128,7 +128,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
         PrivateKey = #{keytool.priv}
         ListenPort = 56709
 
-        #{peers(&:to_s).join("\n")}
+        #{peers(android_gateway).map(&:to_s).join("\n")}
       CONF
     else
       <<~CONF
@@ -139,7 +139,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
         ListenPort = 56709
         #{dns}
 
-        #{peers(&:to_s).join("\n")}
+        #{peers(android_gateway).map(&:to_s).join("\n")}
       CONF
     end
   end
@@ -160,14 +160,48 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     return generate_netbsd! if netbsd?
 
     dist_dir = "dist/#{myself}/etc/wireguard"
-    puts "Generating #{dist_dir}/wg0.conf"
     FileUtils.mkdir_p(dist_dir) unless Dir.exist?(dist_dir)
-    File.write("#{dist_dir}/wg0.conf", to_s)
+    if android?
+      gateways = android_gateways
+      FileUtils.rm_f(Dir["#{dist_dir}/*.conf"])
+      gateways.each do |gateway, tunnel_name|
+        path = "#{dist_dir}/#{tunnel_name}.conf"
+        puts "Generating #{path}"
+        File.write(path, to_s(gateway))
+      end
+    else
+      puts "Generating #{dist_dir}/wg0.conf"
+      File.write("#{dist_dir}/wg0.conf", to_s)
+    end
   end
 
   private
 
   def netbsd? = hosts[myself]['os'] == 'NetBSD'
+  def android? = hosts[myself]['os'] == 'Android'
+
+  def android_gateways
+    configured = hosts[myself].fetch('android_gateways')
+    unless configured.is_a?(Hash) && !configured.empty?
+      raise "#{myself}: android_gateways must be a non-empty mapping"
+    end
+
+    excluded = hosts[myself].fetch('exclude_peers', [])
+    configured.each do |gateway, tunnel_name|
+      gateway_data = hosts[gateway]
+      unless gateway_data&.key?('internet') && !excluded.include?(gateway)
+        raise "#{myself}: android gateway #{gateway.inspect} must name a non-excluded internet host"
+      end
+      unless tunnel_name.is_a?(String) && tunnel_name.match?(/\A[A-Za-z0-9_=+.-]{1,15}\z/)
+        raise "#{myself}: Android tunnel name #{tunnel_name.inspect} must use safe characters and be at most 15 characters"
+      end
+    end
+    unless configured.values.uniq.size == configured.size
+      raise "#{myself}: Android tunnel names must be unique"
+    end
+
+    configured
+  end
 
   # Generates tun0.conf (fed to `wg setconf`) at the host's real conf_dir path,
   # plus a custom /etc/rc.d/wireguard script that creates+addresses tun0,
@@ -316,7 +350,7 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
   # Builds peer entries for the WireGuard mesh. Excludes hosts in exclude_peers and self.
   # Determines endpoint, keepalive, and AllowedIPs per peer based on network topology.
-  def peers
+  def peers(android_gateway = nil)
     exclude = hosts[myself].fetch('exclude_peers', []).append(myself)
     # Check if the current host is in the local area network (LAN).
     in_lan = hosts[myself].key?('lan')
@@ -328,7 +362,9 @@ WireguardConfig = Struct.new(:myself, :hosts) do
     # Track if we've assigned the primary gateway (for mesh subnet routing via gateway:false).
     primary_gateway_assigned = false
 
-    hosts.reject { exclude.include?(_1) }.map do |peer, data|
+    hosts.reject do |peer, _data|
+      exclude.include?(peer) || (android_gateway && peer != android_gateway)
+    end.map do |peer, data|
       # Check if peer is roaming (no lan or internet section).
       # Roaming peers are always behind NAT and cannot be reached directly.
       peer_is_roaming = !data.key?('lan') && !data.key?('internet')
@@ -346,9 +382,14 @@ WireguardConfig = Struct.new(:myself, :hosts) do
 
       # Set keepalive: LAN hosts connecting to internet hosts, OR roaming clients connecting to anyone.
       keepalive = is_roaming || (in_lan && !peer_in_lan)
-      allowed_ips, primary_gateway_assigned = compute_allowed_ips(
-        peer, data, is_roaming, use_gateway, primary_gateway_assigned
-      )
+      allowed_ips, primary_gateway_assigned = if android_gateway
+                                                ['0.0.0.0/0, ::/0', primary_gateway_assigned]
+                                              else
+                                                compute_allowed_ips(
+                                                  peer, data, is_roaming, use_gateway,
+                                                  primary_gateway_assigned
+                                                )
+                                              end
 
       PeerSnippet.new(peer, myself, reach['domain'], data['wg0']['domain'],
                       allowed_ips, endpoint, keepalive)
