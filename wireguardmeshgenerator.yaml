@@ -271,6 +271,9 @@ hosts:
     - freebsd
     - pi1
     - uranus
+    # rocky is gateway-only (it excludes pi0/pi1); keep this symmetric or
+    # pi0 carries a peer that can never complete a handshake.
+    - rocky
   pi1:
     os: NetBSD
     ssh:
@@ -299,6 +302,9 @@ hosts:
     - freebsd
     - pi0
     - uranus
+    # rocky is gateway-only (it excludes pi0/pi1); keep this symmetric or
+    # pi1 carries a peer that can never complete a handshake.
+    - rocky
   rocky:
     os: Linux
     ssh:
