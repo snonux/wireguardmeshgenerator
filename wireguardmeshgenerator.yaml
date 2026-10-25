@@ -208,6 +208,8 @@ hosts:
     - freebsd
   pixel7pro:
     os: Android
+    # Private mesh services require p7p-fishfinger for the symmetric return path.
+    reachable_via: fishfinger
     # Generate one independently selectable full-tunnel config per gateway.
     android_gateways:
       blowfish: p7p-blowfish
