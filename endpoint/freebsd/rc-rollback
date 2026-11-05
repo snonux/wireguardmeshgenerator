@@ -1,6 +1,6 @@
 #!/bin/sh
 # PROVIDE: gonf_endpoint_rollback
-# REQUIRE: FILESYSTEMS
+# REQUIRE: FILESYSTEMS ldconfig
 # BEFORE: netif wireguard
 # KEYWORD: nojail
 . /etc/rc.subr
