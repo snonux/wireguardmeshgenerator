@@ -18,6 +18,17 @@ Address/DNS/AllowedIPs and disabled keepalives are understood. Only referring
 FreeBSD f-hosts and Rocky r-nodes use the helper; it does not migrate NetBSD's
 tun0, guest address plans, public gateways, wg1 or the controller network.
 
+Snapshot admission compares saved AllowedIPs with their expected kernel
+ownership: a normalized exact prefix listed by successive peers belongs only
+to the last saved peer; repeated entries on that peer collapse. Nested prefixes
+of different lengths remain separate. This follows
+[Linux allowedips.c](https://git.zx2c4.com/wireguard-linux/plain/drivers/net/wireguard/allowedips.c)
+and [FreeBSD wg_aip_add](https://raw.githubusercontent.com/freebsd/freebsd-src/main/sys/dev/wg/if_wg.c).
+Missing, extra or wrongly owned runtime prefixes still refuse admission, as
+does other crypto/interface/peer/keepalive drift. This comparison never rewrites
+saved AllowedIPs or runtime state: journals retain each surface's exact bytes,
+and subsequent apply/acceptance checks compare each surface to its own snapshot.
+
 ## Address coordination boundary
 
 Finish and independently confirm the destination's m14/n14 address transaction

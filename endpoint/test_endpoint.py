@@ -38,6 +38,16 @@ Endpoint = 203.0.113.1:56709
 PersistentKeepalive = 25
 '''.encode()
 RUNTIME = SAVED.replace(b'Address = 192.0.2.1/32\nAddress = fd00::1/64\n', b'')
+# Both peers claim the same canonical /24 and /64. More-specific prefixes
+# stay with the first peer; repeated entries on one peer collapse in the kernel.
+SHARED = b'192.0.2.0/24, 2001:db8::/64'
+NESTED = b'192.0.2.2/32, 2001:db8::2/128'
+DUPLICATE_SAVED = SAVED.replace(
+    b'192.0.2.2/32, fd00::2/128',
+    b'192.0.2.7/24, 2001:db8::7/64, ' + NESTED + b'\nAllowedIPs = 192.0.2.0/24').replace(
+    b'198.51.100.0/24', b'198.51.100.0/24, ' + SHARED + b', 2001:0db8::9/64')
+PROJECTED_RUNTIME = RUNTIME.replace(b'192.0.2.2/32, fd00::2/128', NESTED).replace(
+    b'198.51.100.0/24', b'198.51.100.0/24, ' + SHARED)
 SCOPE = {'id': 'test-stage-1', 'peer': KEY, 'old': OLD, 'new': NEW, 'source_sha256': 'a' * 64}
 
 
@@ -153,6 +163,100 @@ class EndpointTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.agent.snapshot()
         self.assertFalse((self.agent.journal / 'record.json').exists())
+
+    def test_snapshot_exact_prefix_ownership_follows_saved_peer_order(self):
+        interface, first, second = DUPLICATE_SAVED.split(b'[Peer]')
+        cases = [(DUPLICATE_SAVED, PROJECTED_RUNTIME),
+                 (interface + b'[Peer]' + second + b'[Peer]' + first,
+                  RUNTIME.replace(b'192.0.2.2/32, fd00::2/128', NESTED + b', ' + SHARED)),
+                 (DUPLICATE_SAVED.replace(b', ' + NESTED, b''),
+                  PROJECTED_RUNTIME.replace(b'AllowedIPs = ' + NESTED + b'\n', b''))]
+        for index, (saved, runtime) in enumerate(cases):
+            with self.subTest(index=index):
+                root = self.root / str(index)
+                root.mkdir(mode=0o700)
+                agent = FixtureAgent(root)
+                atomic(agent.saved, saved)
+                agent.live = runtime
+                agent.snapshot()
+                self.assertEqual(agent.saved.read_bytes(), saved)
+                self.assertEqual(agent.live, runtime)
+                self.assertEqual((agent.journal / 'saved.before').read_bytes(), saved)
+                self.assertEqual((agent.journal / 'runtime.before').read_bytes(), runtime)
+                self.assertEqual(agent.read()['phase'], 'armed')
+                self.assertEqual(agent.calls, [])
+
+    def test_snapshot_prefix_projection_still_refuses_actual_drift(self):
+        variants = {
+            'wrong owner': PROJECTED_RUNTIME.replace(NESTED, NESTED + b', ' + SHARED).replace(
+                b'198.51.100.0/24, ' + SHARED, b'198.51.100.0/24'),
+            'duplicate owners': PROJECTED_RUNTIME.replace(NESTED, NESTED + b', ' + SHARED),
+            'missing v4': PROJECTED_RUNTIME.replace(b', 192.0.2.0/24', b''),
+            'missing v6': PROJECTED_RUNTIME.replace(b', 2001:db8::/64', b''),
+            'missing nested v4': PROJECTED_RUNTIME.replace(b'192.0.2.2/32, ', b''),
+            'missing nested v6': PROJECTED_RUNTIME.replace(b', 2001:db8::2/128', b''),
+            'extra prefix': PROJECTED_RUNTIME.replace(NESTED, NESTED + b', 203.0.113.0/24'),
+            'preshared key': PROJECTED_RUNTIME.replace(b'PresharedKey = ', b'PresharedKey = x'),
+            'private key': PROJECTED_RUNTIME.replace(b'PrivateKey = ', b'PrivateKey = x'),
+            'listen port': PROJECTED_RUNTIME.replace(b'ListenPort = 56709', b'ListenPort = 56710'),
+            'fwmark': PROJECTED_RUNTIME.replace(b'ListenPort = 56709', b'ListenPort = 56709\nFwMark = 1'),
+            'keepalive': PROJECTED_RUNTIME.replace(b'PersistentKeepalive = 25', b'PersistentKeepalive = 30'),
+            'peer set': PROJECTED_RUNTIME.replace(f'PublicKey = {OTHER}'.encode(), b'PublicKey = foreign'),
+        }
+        atomic(self.agent.saved, DUPLICATE_SAVED)
+        for name, runtime in variants.items():
+            with self.subTest(name=name):
+                self.agent.live = runtime
+                with self.assertRaises(Refused):
+                    self.agent.snapshot()
+                self.assertFalse((self.agent.journal / 'record.json').exists())
+                self.assertFalse((self.agent.journal / 'saved.before').exists())
+                self.assertEqual(self.agent.saved.read_bytes(), DUPLICATE_SAVED)
+                self.assertEqual(self.agent.live, runtime)
+                self.assertEqual(self.agent.calls, [])
+
+    def test_projected_snapshot_transaction_preserves_each_surface_exactly(self):
+        # Exercise Agent's real command boundary, snapshot and transaction methods.
+        agent = Agent(self.agent.config, self.agent.journal)
+        agent.saved = self.agent.saved
+        atomic(agent.saved, DUPLICATE_SAVED)
+        learned = b'198.51.100.7:62000'
+        runtime_before = PROJECTED_RUNTIME.replace(OLD.encode(), learned)
+        live = runtime_before
+        commands = []
+
+        def execute(arguments):
+            nonlocal live
+            commands.append(arguments)
+            if arguments == ['/usr/bin/wg', 'showconf', 'wg0']:
+                return live
+            self.assertEqual(arguments[:6], ['/usr/bin/wg', 'set', 'wg0', 'peer', KEY, 'endpoint'])
+            self.assertEqual(len(arguments), 7)
+            current = parse(live)[1][KEY]['Endpoint'].encode()
+            live = live.replace(b'Endpoint = ' + current, b'Endpoint = ' + arguments[6].encode())
+            return b''
+
+        with patch.object(agent, 'recovery_check'), patch('endpoint.run', side_effect=execute):
+            agent.snapshot()
+            self.assertEqual(agent.saved.read_bytes(), DUPLICATE_SAVED)
+            self.assertEqual(live, runtime_before)
+            for name, expected in [('saved.before', DUPLICATE_SAVED), ('runtime.before', runtime_before),
+                                   ('saved.after', DUPLICATE_SAVED.replace(OLD.encode(), NEW.encode()))]:
+                self.assertEqual((agent.journal / name).read_bytes(), expected)
+            self.agent.approve('apply-approved')
+            agent.apply()
+            self.assertEqual(agent.saved.read_bytes(), DUPLICATE_SAVED.replace(OLD.encode(), NEW.encode()))
+            self.assertEqual(live, runtime_before.replace(learned, NEW.encode()))
+            self.agent.approve('accept-approved')
+            agent.confirm()
+            self.assertTrue(agent.read()['accepted'])
+            agent.restore(True)
+            self.assertEqual(agent.read()['phase'], 'restored')
+            self.assertEqual(agent.saved.read_bytes(), DUPLICATE_SAVED)
+            self.assertEqual(live, runtime_before)
+        self.assertEqual([c for c in commands if c[1] == 'set'], [
+            ['/usr/bin/wg', 'set', 'wg0', 'peer', KEY, 'endpoint', NEW],
+            ['/usr/bin/wg', 'set', 'wg0', 'peer', KEY, 'endpoint', learned.decode()]])
 
     def test_expired_and_foreign_gates_refused(self):
         self.agent.snapshot()

@@ -164,6 +164,27 @@ def normalized(values):
     return result
 
 
+def expected_runtime_peers(peers):
+    """Project saved AllowedIPs into the kernel's exact-prefix ownership table."""
+    expected = {key: normalized(values) for key, values in peers.items()}
+    owners = {}
+    # parse preserves saved peer order. Linux allowedips.c and FreeBSD
+    # wg_aip_add transfer an existing exact prefix to the last inserting peer;
+    # different prefix lengths remain separate entries, even when nested.
+    for key, values in expected.items():
+        prefixes = values.pop('AllowedIPs', None)
+        if prefixes is not None:
+            for prefix in prefixes.split(','):
+                owners[prefix] = key
+    by_peer = {key: [] for key in peers}
+    for prefix, key in owners.items():
+        by_peer[key].append(prefix)
+    for key, prefixes in by_peer.items():
+        if prefixes:
+            expected[key]['AllowedIPs'] = ','.join(sorted(prefixes))
+    return expected
+
+
 def compare(before, after, peer, old, new):
     interface, peers = parse(before)
     next_interface, next_peers = parse(after)
@@ -278,8 +299,9 @@ class Agent:
         require(self.config['peer'] in live, 'selected runtime peer absent')
         # Compare every crypto/route/keepalive field; endpoints are captured separately
         # because authenticated roaming can differ from persisted endpoints.
+        expected = expected_runtime_peers(peers)
         for key in peers:
-            a, b = normalized(peers[key]), normalized(live[key])
+            a, b = expected[key], normalized(live[key])
             a.pop('Endpoint', None)
             b.pop('Endpoint', None)
             require(a == b, 'saved/runtime peer drift')
