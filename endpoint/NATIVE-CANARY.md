@@ -70,7 +70,7 @@ Capture the exact current source SHA256 in the scope; do not print configuration
 Both destinations already have accepted dual Stage: f3 old .1.133/new .20.133,
 r2 old .1.122/new .20.122, with local ULA ::133/::122. Reverify fresh authenticated
 access to both literal addresses, source/return routes (including laptop
-192.168.99.2/32 via 192.168.1.2), native UDP56709 policy and unchanged defaults
+10.99.0.2/32 via 192.168.1.2), native UDP56709 policy and unchanged defaults
 via 192.168.1.1 before authorizing either direction. Review f3's separately
 prepared fail-closed UDP source-guard policy before testing r2→f3.
 
