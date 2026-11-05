@@ -29,3 +29,10 @@ generated under `keys/<host>/`; do not generate a separate key in the Android ap
 ## Details
 
 Read this log post: https://foo.zone/gemfeed/2025-05-11-f3s-kubernetes-with-freebsd-part-5.html
+
+## Scoped endpoint migration
+
+The dormant [endpoint migration tools](endpoint/README.md) prepare single-referring-host
+Endpoint updates with independent rollback and a durable generator/source journal.
+They require separately accepted dual addresses and later native recovery/traffic
+proofs; no endpoint migration is activated by normal generation.

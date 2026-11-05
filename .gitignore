@@ -1,2 +1,5 @@
 dist/
 keys/
+.endpoint-generator.lock
+.endpoint-pending
+__pycache__/

@@ -581,6 +581,13 @@ InstallConfig = Struct.new(:myself, :hosts) do
 end
 
 begin
+  # Keep the exclusion for the entire command, including source parsing and
+  # installs. Endpoint coordination uses this same flock before creating its
+  # durable marker; a crash leaves generation blocked until reconciliation.
+  endpoint_lock = File.open('.endpoint-generator.lock', File::RDWR | File::CREAT, 0o600)
+  endpoint_lock.flock(File::LOCK_EX)
+  raise 'Unresolved endpoint migration: reconcile its private journal first' if File.exist?('.endpoint-pending') || File.symlink?('.endpoint-pending')
+
   options = { hosts: [] }
   OptionParser.new do |opts|
     opts.banner = 'Usage: wireguardmeshgenerator.rb [options]'

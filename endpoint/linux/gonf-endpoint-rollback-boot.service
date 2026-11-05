@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore unconfirmed saved WireGuard endpoint before networking
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target wg-quick@wg0.service
+ConditionPathExists=/var/lib/gonf-endpoint/pending/record.json
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/sbin/gonf-endpoint-rollback restore-boot /var/lib/gonf-endpoint/pending
+
+[Install]
+RequiredBy=wg-quick@wg0.service

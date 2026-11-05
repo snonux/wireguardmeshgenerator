@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore unconfirmed running WireGuard endpoint after startup
+After=wg-quick@wg0.service gonf-endpoint-rollback-boot.service
+Before=k3s.service
+ConditionPathExists=/var/lib/gonf-endpoint/pending/record.json
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/sbin/gonf-endpoint-rollback restore-after-boot /var/lib/gonf-endpoint/pending
+
+[Install]
+RequiredBy=k3s.service
+WantedBy=multi-user.target
