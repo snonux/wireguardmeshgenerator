@@ -10,7 +10,7 @@ stop_cmd=:
 endpoint_start()
 {
     if [ -f /var/db/gonf-endpoint/pending/record.json ]; then
-        /usr/local/sbin/gonf-endpoint-rollback restore-boot /var/db/gonf-endpoint/pending || return 1
+        /usr/local/bin/python3.12 /usr/local/sbin/gonf-endpoint-rollback restore-boot /var/db/gonf-endpoint/pending || return 1
     fi
 }
 load_rc_config "$name"

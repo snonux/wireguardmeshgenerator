@@ -2,6 +2,7 @@
 import base64
 import copy
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import shutil
@@ -11,7 +12,7 @@ import time
 import unittest
 from unittest.mock import patch, Mock
 
-from endpoint import Agent, Refused, atomic, compare, digest, normalized, parse, replace_endpoint, write_json
+from endpoint import Agent, Refused, atomic, compare, digest, journal_lock, normalized, parse, replace_endpoint, scope_digest, write_json
 from controller import Controller
 
 KEY = base64.b64encode(bytes(range(32))).decode()
@@ -75,6 +76,27 @@ class FixtureAgent(Agent):
         self.apply()
         self.approve('accept-approved')
         self.confirm()
+
+
+class FileFixtureAgent(FixtureAgent):
+    """Persist the synthetic runtime too, so separate processes observe each other."""
+    def runtime(self):
+        return (self.journal / 'fixture-live').read_bytes()
+
+    def set_endpoint(self, value):
+        current = self.runtime()
+        old = parse(current)[1][self.config['peer']]['Endpoint']
+        atomic(self.journal / 'fixture-live', replace_endpoint(current, self.config['peer'], old, value))
+
+
+def race_action(agent, action, now, ready, results):
+    ready.set()
+    try:
+        with journal_lock(agent.journal), patch('endpoint.time.time', return_value=now):
+            agent.dispatch(action)
+        results.put('ok')
+    except Refused:
+        results.put('refused')
 
 
 class EndpointTests(unittest.TestCase):
@@ -228,6 +250,184 @@ class EndpointTests(unittest.TestCase):
         compare(RUNTIME, result.stdout, KEY, OLD, NEW)
 
 
+class CanaryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.agent = FixtureAgent(self.root, dict(SCOPE, protocol='canary'))
+        (self.agent.journal / 'recovery-approved').unlink()
+        self.deadline = int(time.time()) + 120
+        self.outer = self.deadline + 120
+        self.authorize()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def authorize(self, **changes):
+        gate = {'config_sha256': digest(json.dumps(self.agent.config, sort_keys=True).encode()),
+                'expires': self.outer, 'confirm_before': self.deadline}
+        gate.update(changes)
+        write_json(self.agent.journal / 'canary-approved.json', gate)
+
+    def apply(self):
+        self.agent.snapshot()
+        self.agent.approve('apply-approved')
+        self.agent.apply()
+
+    def test_canary_requires_no_false_production_proof_and_restores_on_expiry(self):
+        self.agent.live = RUNTIME.replace(OLD.encode(), b'198.51.100.7:62000')
+        captured = self.agent.live
+        self.apply()
+        self.assertEqual(self.agent.read()['deadline'], self.deadline)
+        self.assertIn(NEW.encode(), self.agent.saved.read_bytes())
+        with patch('endpoint.time.time', return_value=self.deadline):
+            self.agent.dispatch('watchdog')
+            self.agent.dispatch('watchdog')
+        self.assertEqual(self.agent.saved.read_bytes(), SAVED)
+        self.assertEqual(self.agent.live, captured)
+        self.assertEqual(self.agent.read()['phase'], 'restored')
+        self.assertFalse((self.agent.journal / 'recovery-approved').exists())
+
+    def test_missing_foreign_stale_unbounded_and_public_authorizations_refused(self):
+        for changes in ({'config_sha256': 'b' * 64}, {'expires': 0},
+                        {'expires': int(time.time()) + 1000}, {'expires': True},
+                        {'extra': True}):
+            self.authorize(**changes)
+            with self.assertRaises(Refused):
+                self.agent.snapshot()
+            self.assertFalse((self.agent.journal / 'record.json').exists())
+        self.authorize()
+        path = self.agent.journal / 'canary-approved.json'
+        path.chmod(0o644)
+        with self.assertRaises(Refused):
+            self.agent.snapshot()
+        path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.agent.snapshot()
+
+    def test_canary_readiness_and_fresh_apply_gates_still_required(self):
+        with patch.object(self.agent, 'recovery_check', side_effect=Refused('inactive')):
+            with self.assertRaises(Refused):
+                self.agent.snapshot()
+        self.agent.snapshot()
+        with self.assertRaises(Refused):
+            self.agent.apply()
+        self.agent.approve('apply-approved')
+        self.authorize(expires=self.deadline + 1)
+        with self.assertRaises(Refused):
+            self.agent.apply()
+        self.authorize()
+        with patch.object(self.agent, 'recovery_check', side_effect=Refused('inactive')):
+            with self.assertRaises(Refused):
+                self.agent.apply()
+        self.assertEqual(self.agent.saved.read_bytes(), SAVED)
+
+    def test_confirmation_retains_past_inner_deadline_but_outer_lease_restores(self):
+        self.apply()
+        self.agent.approve('accept-approved')
+        with self.assertRaises(Refused):
+            self.agent.confirm()
+        self.agent.approve('canary-confirm-approved')
+        self.agent.confirm()
+        self.assertEqual(self.agent.read()['phase'], 'confirmed')
+        with patch('endpoint.time.time', return_value=self.deadline + 1):
+            self.agent.dispatch('watchdog')
+        self.assertIn(NEW.encode(), self.agent.saved.read_bytes())
+        self.assertIn(NEW.encode(), self.agent.live)
+        with self.assertRaises(Refused):
+            self.agent.release()
+        with patch('endpoint.time.time', return_value=self.outer):
+            self.agent.dispatch('watchdog')
+        self.assertEqual(self.agent.saved.read_bytes(), SAVED)
+        self.assertEqual(self.agent.live, RUNTIME)
+        with self.assertRaises(Refused):
+            self.agent.confirm()
+
+    def test_confirmed_canary_still_restores_at_boot(self):
+        self.apply()
+        self.agent.approve('canary-confirm-approved')
+        self.agent.confirm()
+        self.agent.dispatch('restore-boot')
+        self.agent.dispatch('restore-after-boot')
+        self.assertEqual(self.agent.saved.read_bytes(), SAVED)
+        self.assertEqual(self.agent.live, RUNTIME)
+
+    def test_canary_boot_before_deadline_and_runtime_retry(self):
+        self.apply()
+        self.agent.dispatch('restore-boot')
+        self.assertEqual(self.agent.saved.read_bytes(), SAVED)
+        self.assertIn(NEW.encode(), self.agent.live)
+        self.agent.fail_set = True
+        with self.assertRaises(Refused):
+            self.agent.dispatch('restore-after-boot')
+        self.assertEqual(self.agent.read()['phase'], 'boot-restored')
+        self.agent.fail_set = False
+        self.agent.dispatch('restore-after-boot')
+        self.assertEqual(self.agent.live, RUNTIME)
+
+    def test_expiry_wins_confirmation_and_failed_confirmation_remains_armed(self):
+        self.apply()
+        self.agent.approve('canary-confirm-approved')
+        self.agent.live = self.agent.live.replace(b'198.51.100.0/24', b'198.51.101.0/24')
+        with self.assertRaises(Refused):
+            self.agent.confirm()
+        self.assertEqual(self.agent.read()['phase'], 'applied')
+        with patch('endpoint.time.time', return_value=self.deadline):
+            with self.assertRaises(Refused):
+                self.agent.confirm()
+            self.agent.dispatch('watchdog')
+            with self.assertRaises(Refused):
+                self.agent.confirm()
+        self.assertEqual(self.agent.saved.read_bytes(), SAVED)
+
+    def test_canary_cannot_relabel_a_journal_as_production_or_reuse_trial(self):
+        self.apply()
+        with self.assertRaises(Refused):
+            self.agent.snapshot()
+        self.assertNotEqual(scope_digest(self.agent.config), scope_digest(SCOPE))
+        self.agent.config.pop('protocol')
+        self.agent.canary = False
+        self.agent.approve('recovery-approved')
+        with self.assertRaises(Refused):
+            self.agent.read()
+
+    def test_actual_flock_serializes_confirm_against_outer_expiry(self):
+        # Whichever worker obtains the real CLI lock first, outer expiry wins.
+        self.apply()
+        self.agent.approve('canary-confirm-approved')
+        shared = FileFixtureAgent.__new__(FileFixtureAgent)
+        shared.__dict__.update(self.agent.__dict__)
+        atomic(shared.journal / 'fixture-live', self.agent.live)
+        context = multiprocessing.get_context('spawn')
+        results = context.Queue()
+        ready = [context.Event(), context.Event()]
+        workers = [context.Process(target=race_action, args=(shared, action, now, event, results))
+                   for action, now, event in [('confirm', time.time(), ready[0]),
+                                               ('watchdog', self.outer, ready[1])]]
+        try:
+            with journal_lock(shared.journal):
+                for worker in workers:
+                    worker.start()
+                for event in ready:
+                    self.assertTrue(event.wait(5))
+                self.assertTrue(all(worker.is_alive() for worker in workers))
+                self.assertEqual(shared.read()['phase'], 'applied')
+            for worker in workers:
+                worker.join(5)
+                self.assertEqual(worker.exitcode, 0)
+            outcomes = [results.get(timeout=5), results.get(timeout=5)]
+            self.assertIn('ok', outcomes)
+            self.assertEqual(shared.read()['phase'], 'restored')
+            self.assertEqual(shared.saved.read_bytes(), SAVED)
+            self.assertEqual(shared.runtime(), RUNTIME)
+        finally:
+            for worker in workers:
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(5)
+            results.close()
+
+
 class FixtureController(Controller):
     def __init__(self, root):
         repo = root / 'repo'; repo.mkdir()
@@ -289,6 +489,23 @@ class ControllerTests(unittest.TestCase):
                 controller.peer(self.c.read(), 'b.example', 'apply')
         self.assertEqual(command.call_count, 1)
         self.assertIn(' scope ', command.call_args.args[0][-1])
+
+    def test_canary_manifest_and_receipt_cannot_promote_source(self):
+        self.manifest['scope']['protocol'] = 'canary'
+        with self.assertRaises(Refused):
+            self.c.begin(self.manifest, self.candidate)
+        self.assertFalse(self.c.pending.exists())
+        self.manifest['scope'].pop('protocol')
+        self.c.begin(self.manifest, self.candidate)
+        controller = Controller(self.c.repo, self.c.state)
+        receipt = {'scope_sha256': scope_digest(dict(self.scope, protocol='canary'))}
+        result = Mock(returncode=0, stdout=json.dumps(receipt).encode())
+        with patch('controller.subprocess.run', return_value=result) as command:
+            with self.assertRaises(Refused):
+                controller.dispatch('commit')
+        self.assertEqual(command.call_count, 1)
+        self.assertEqual(self.c.source.read_bytes(), self.before)
+        self.assertTrue(self.c.pending.exists())
 
     def test_generator_refuses_marker_before_help_or_yaml_read(self):
         script = Path(__file__).resolve().parent.parent / 'wireguardmeshgenerator.rb'

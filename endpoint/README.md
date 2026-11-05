@@ -41,8 +41,12 @@ promotion occurs until the destination and **all** referring hosts accepted.
 
 Do not install or enable this during p24 preparation. Later authorized work
 must provision Python **3.9+** explicitly: `/usr/bin/python3` on Rocky and
-`/usr/local/bin/python3` on FreeBSD. The shebang uses env, so installed service
-PATH must select that verified interpreter. Ruby is needed only on the controller
+the package-managed `/usr/local/bin/python3.12` (`python312`) on FreeBSD.
+The FreeBSD rc hooks, cron entry and controller invoke that exact interpreter;
+no `python3` symlink is required. Verify interpreter/package ownership before
+installation; provision `python312` through the scoped managed package plan
+if absent. Direct FreeBSD helper calls must also use this interpreter explicitly.
+The source shebang uses env for development. Ruby is needed only on the controller
 (the existing generator's YAML parser); there are no new Python dependencies.
 
 Install `endpoint.py` as root-owned executable
@@ -91,7 +95,7 @@ the second restores runtime after wireguard, before LOGIN. Install this exact
 root-crontab **system** line (in `/etc/crontab`), with cron running:
 
 ```cron
-* * * * * root /usr/local/sbin/gonf-endpoint-rollback watchdog /var/db/gonf-endpoint/pending
+* * * * * root /usr/local/bin/python3.12 /usr/local/sbin/gonf-endpoint-rollback watchdog /var/db/gonf-endpoint/pending
 ```
 
 Snapshot checks cron and native rcorder ordering. rc.d failure alone does not
@@ -101,7 +105,8 @@ in the native canary before relying on it. No reboot command is provided.
 Before provisioning `pending/recovery-approved`, prove independent expiry with
 SSH gone, idempotent restoration, confirm/release, unconfirmed boot before wg0
 loads, runtime restoration afterwards and reapply behavior, using a bounded
-native canary. Each authorization file is root-owned 0600 and contains exactly
+native canary using the [separate bounded trial protocol](NATIVE-CANARY.md).
+The production authorization files are root-owned 0600 and contain exactly
 the current unique transaction ID. This is an explicit operator assertion of
 external proof, not a test result produced by this tool. No recipe creates it.
 

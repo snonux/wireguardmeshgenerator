@@ -61,7 +61,8 @@ class Controller:
         # shell receives only quoted fixed helper/action/path arguments.
         if action != 'scope':
             self.peer(record, name, 'scope')
-        command = peer['prefix'] + ['/usr/local/sbin/gonf-endpoint-rollback', action, peer['journal']]
+        interpreter = '/usr/local/bin/python3.12' if peer['journal'].startswith('/var/db/') else '/usr/bin/python3'
+        command = peer['prefix'] + [interpreter, '/usr/local/sbin/gonf-endpoint-rollback', action, peer['journal']]
         result = subprocess.run(peer['ssh'] + [shlex.join(command)],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         require(result.returncode == 0, 'referring-host action failed; lock retained')
@@ -74,6 +75,8 @@ class Controller:
         require(not self.pending.exists(), 'endpoint migration already pending')
         require(not (self.state / 'record.json').exists(), 'controller journal already exists')
         validate_scope(manifest['scope'])
+        require(manifest['scope'].get('protocol', 'production') == 'production',
+                'canary cannot enter a source migration')
         require(manifest['peers'] and isinstance(manifest['peers'], dict), 'explicit referring hosts required')
         # The complete referring-host list must be independently checked against
         # current saved configs. No broad host discovery or key rendering here.

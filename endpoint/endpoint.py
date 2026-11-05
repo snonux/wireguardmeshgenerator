@@ -83,9 +83,24 @@ def load_json(path):
     return json.loads(Path(path).read_bytes())
 
 
+@contextlib.contextmanager
+def journal_lock(directory):
+    private(directory.parent, True)
+    lock_path = directory.parent / 'lock'
+    with open(lock_path, 'a') as lock:
+        os.chmod(lock_path, 0o600)
+        private(lock_path)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+
+
 def scope_digest(scope):
-    return digest(json.dumps({k: scope[k] for k in
-        ('id', 'old', 'new', 'peer', 'source_sha256')}, sort_keys=True).encode())
+    receipt = {k: scope[k] for k in ('id', 'old', 'new', 'peer', 'source_sha256')}
+    # Preserve existing production receipts, but never let a trial impersonate
+    # a production peer, even with identical IDs and endpoint values.
+    if scope.get('protocol', 'production') != 'production':
+        receipt['protocol'] = scope['protocol']
+    return digest(json.dumps(receipt, sort_keys=True).encode())
 
 
 def endpoint(value):
@@ -200,6 +215,8 @@ class Agent:
     def __init__(self, config, journal):
         self.config = config
         validate_scope(config)
+        self.canary = config.get('protocol', 'production') == 'canary'
+        require(config.get('protocol', 'production') in ('production', 'canary'), 'unsupported protocol')
         require(config['role'] == 'peer' and config['interface'] == 'wg0', 'unsupported agent scope')
         self.journal = Path(journal)
         self.saved = Path(config['saved'])
@@ -229,13 +246,24 @@ class Agent:
         else:
             run(['/usr/sbin/service', 'cron', 'onestatus'])
             cron = Path('/etc/crontab').read_text()
-            expected = '* * * * * root /usr/local/sbin/gonf-endpoint-rollback watchdog /var/db/gonf-endpoint/pending'
+            expected = '* * * * * root /usr/local/bin/python3.12 /usr/local/sbin/gonf-endpoint-rollback watchdog /var/db/gonf-endpoint/pending'
             require(expected in cron.splitlines(), 'independent endpoint cron missing')
             scripts = sorted(Path('/etc/rc.d').glob('*')) + sorted(Path('/usr/local/etc/rc.d').glob('*'))
             order = run(['/sbin/rcorder'] + [str(p) for p in scripts if p.is_file()]).decode().splitlines()
             require(order.index('/etc/rc.d/gonf_endpoint_rollback') < order.index('/etc/rc.d/netif') and
                     order.index('/usr/local/etc/rc.d/wireguard') < order.index('/etc/rc.d/gonf_endpoint_runtime'),
                     'endpoint boot hook ordering invalid')
+
+    def canary_deadline(self):
+        gate = load_json(self.journal / 'canary-approved.json')
+        require(set(gate) == {'config_sha256', 'expires', 'confirm_before'}, 'invalid canary authorization')
+        require(gate['config_sha256'] == digest(json.dumps(self.config, sort_keys=True).encode()),
+                'canary authorization belongs to another scope')
+        now = time.time()
+        require(type(gate['expires']) is int and type(gate['confirm_before']) is int and
+                now < gate['confirm_before'] < gate['expires'] <= now + 900,
+                'canary authorization expired or exceeds bounded trial')
+        return gate
 
     def snapshot(self):
         require(not (self.journal / 'record.json').exists(), 'snapshot already exists')
@@ -260,19 +288,31 @@ class Agent:
         protocol = {k: v for k, v in saved_interface.items() if k in ('PrivateKey', 'ListenPort', 'FwMark')}
         require(normalized(protocol) == normalized(runtime_interface), 'saved/runtime interface drift')
         require(live[self.config['peer']].get('Endpoint'), 'running endpoint missing')
-        private(self.journal / 'recovery-approved')
-        require((self.journal / 'recovery-approved').read_text().strip() == self.config['id'],
-                'native timer/boot recovery proof not bound to this transaction')
+        if self.canary:
+            authorization = self.canary_deadline()
+            deadline = authorization['confirm_before']
+        else:
+            private(self.journal / 'recovery-approved')
+            require((self.journal / 'recovery-approved').read_text().strip() == self.config['id'],
+                    'native timer/boot recovery proof not bound to this transaction')
+            deadline = int(time.time()) + 900
         candidate = replace_endpoint(saved, self.config['peer'], self.config['old'], self.config['new'])
         atomic(self.journal / 'saved.before', saved)
         atomic(self.journal / 'runtime.before', runtime)
         atomic(self.journal / 'saved.after', candidate)
-        record = {'scope': self.config, 'phase': 'armed', 'deadline': int(time.time()) + 900}
+        record = {'scope': self.config, 'phase': 'armed', 'deadline': deadline}
+        if self.canary:
+            record['canary_expires'] = authorization['expires']
         write_json(self.journal / 'record.json', record)
 
     def apply(self):
         record = self.read()
         require(record['phase'] == 'armed' and time.time() < record['deadline'], 'journal expired or applied')
+        if self.canary:
+            authorization = self.canary_deadline()
+            require(authorization['confirm_before'] == record['deadline'] and
+                    authorization['expires'] == record['canary_expires'], 'canary deadline changed')
+            self.recovery_check()
         require((self.journal / 'apply-approved').is_file(), 'fresh referring-host reachability approval absent')
         private(self.journal / 'apply-approved')
         require((self.journal / 'apply-approved').read_text().strip() == self.config['id'],
@@ -313,9 +353,10 @@ class Agent:
     def confirm(self):
         record = self.read()
         require(record['phase'] == 'applied' and time.time() < record['deadline'], 'unapplied or expired journal')
-        require((self.journal / 'accept-approved').is_file(), 'external traffic/cold-start approval absent')
-        private(self.journal / 'accept-approved')
-        require((self.journal / 'accept-approved').read_text().strip() == self.config['id'],
+        approval = self.journal / ('canary-confirm-approved' if self.canary else 'accept-approved')
+        require(approval.is_file(), 'external acceptance approval absent')
+        private(approval)
+        require(approval.read_text().strip() == self.config['id'],
                 'acceptance approval belongs to another transaction')
         compare((self.journal / 'saved.before').read_bytes(), self.saved.read_bytes(),
                 self.config['peer'], self.config['old'], self.config['new'])
@@ -326,9 +367,14 @@ class Agent:
         # Confirmation validates without disarming. Controller releases only after
         # destination address acceptance and coherent source promotion.
         record['accepted'] = True
+        if self.canary:
+            # Exercise retention beyond the inner deadline, under an independent
+            # outer lease. There is no durable production release for a trial.
+            record['phase'] = 'confirmed'
         write_json(self.journal / 'record.json', record)
 
     def release(self):
+        require(not self.canary, 'canary cannot release or promote an endpoint')
         record = self.read()
         if record['phase'] == 'confirmed':
             return
@@ -341,7 +387,7 @@ class Agent:
     def status(self):
         record = self.read() if (self.journal / 'record.json').exists() else {'phase': 'absent'}
         # Sanitized receipt only: no config, key, or runtime output.
-        return {k: record.get(k) for k in ('phase', 'accepted', 'deadline')} | {
+        return {k: record.get(k) for k in ('phase', 'accepted', 'deadline', 'canary_expires')} | {
             'id': self.config['id'], 'source_sha256': self.config['source_sha256'],
             'scope_sha256': scope_digest(self.config)}
 
@@ -359,7 +405,7 @@ class Agent:
         elif action == 'status':
             print(json.dumps(self.status()))
         elif action == 'restore-boot':
-            if self.read()['phase'] != 'confirmed':
+            if self.canary or self.read()['phase'] != 'confirmed':
                 self.restore(False)
         elif action == 'restore-after-boot':
             if self.read()['phase'] == 'boot-restored':
@@ -370,7 +416,9 @@ class Agent:
             if not (self.journal / 'record.json').exists():
                 return
             record = self.read()
-            if record['phase'] not in ('confirmed', 'restored') and time.time() >= record['deadline']:
+            outer_expired = self.canary and time.time() >= record['canary_expires']
+            inner_expired = record['phase'] != 'confirmed' and time.time() >= record['deadline']
+            if record['phase'] != 'restored' and (outer_expired or inner_expired):
                 self.restore(True)
         else:
             raise Refused('unsupported peer action')
@@ -387,12 +435,7 @@ def main():
     # Advisory lock survives crashes as a file; flock owns exclusion.
     require(args.directory == Path('/var/lib/gonf-endpoint/pending') or
             args.directory == Path('/var/db/gonf-endpoint/pending'), 'unsupported referring-host journal')
-    private(args.directory.parent, True)
-    lock_path = args.directory.parent / 'lock'
-    with open(lock_path, 'a') as lock:
-        os.chmod(lock_path, 0o600)
-        private(lock_path)
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with journal_lock(args.directory):
         Agent(config, args.directory).dispatch(args.action)
 
 
