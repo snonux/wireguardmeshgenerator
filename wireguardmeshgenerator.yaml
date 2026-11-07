@@ -8,7 +8,7 @@ hosts:
       reload_cmd: service wireguard reload
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.130
+      ip: 10.20.0.130
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.130
@@ -27,7 +27,7 @@ hosts:
       reload_cmd: service wireguard reload
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.131
+      ip: 10.20.0.131
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.131
@@ -46,7 +46,7 @@ hosts:
       reload_cmd: service wireguard reload
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.132
+      ip: 10.20.0.132
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.132
@@ -65,7 +65,7 @@ hosts:
       reload_cmd: service wireguard reload
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.133
+      ip: 10.20.0.133
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.133
@@ -84,7 +84,7 @@ hosts:
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.120
+      ip: 10.20.0.120
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.120
@@ -103,7 +103,7 @@ hosts:
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.121
+      ip: 10.20.0.121
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.121
@@ -122,7 +122,7 @@ hosts:
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.122
+      ip: 10.20.0.122
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.122
@@ -255,7 +255,7 @@ hosts:
       wg_bin: /usr/pkg/bin/wg
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.125
+      ip: 10.20.0.125
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.203
@@ -286,7 +286,7 @@ hosts:
       wg_bin: /usr/pkg/bin/wg
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.126
+      ip: 10.20.0.126
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.204
@@ -316,7 +316,7 @@ hosts:
       reload_cmd: systemctl reload wg-quick@wg0.service
     lan:
       domain: lan.buetow.org
-      ip: 192.168.1.123
+      ip: 10.20.0.123
     wg0:
       domain: wg0.wan.buetow.org
       ip: 192.168.2.123
