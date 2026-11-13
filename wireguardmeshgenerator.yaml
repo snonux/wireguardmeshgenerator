@@ -357,17 +357,13 @@ access_networks:
         ip: 10.99.0.2
         keepalive: 25
         # Prefixes earth routes into wg2 (lab, Shelly plugs, the hub itself).
-        # 192.168.11.140-143 are stale (no router PF rule matches them any
-        # more) and kept only until someone decides to drop them.
+        # The stale 192.168.11.140-143 routes (no router PF rule matched them)
+        # were dropped on 2026-11-14 at the user's request.
         routes:
         - 10.20.0.0/24
         - 10.30.0.28/32
         - 10.30.0.29/32
         - 10.99.0.1/32
-        - 192.168.11.140/32
-        - 192.168.11.141/32
-        - 192.168.11.142/32
-        - 192.168.11.143/32
       pixel7pro:
         # Public-only peer: its private key exists only on the phone (it is
         # not the wg0 pixel7pro key), so no client config is generated.
