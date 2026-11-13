@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
 # This script is a Wireguard mesh configuration generator and manager.
 # It provides options to generate, install, and clean Wireguard configurations
-# for a set of hosts specified in a YAML configuration file.
+# for a set of hosts specified in a YAML configuration file, and generates (but
+# never installs) the hub-and-spoke access networks such as wg2.
 
 require 'English'
 require 'fileutils'
@@ -17,26 +18,44 @@ NETBSD_WG_INTERFACE = 'tun0'
 
 # KeyTool is a utility class for managing WireGuard keys.
 # It ensures the presence of required directories and files for public/private keys
-# and preshared keys (PSKs). If keys are missing, it generates them using the `wg` tool.
+# and preshared keys (PSKs). If keys are missing, it generates them using the `wg` tool,
+# unless the caller disables generation (access networks only use imported keys).
 class KeyTool
   # Initializes the KeyTool instance.
-  # Ensures the `wg` tool is available and required directories exist.
-  # Generates public/private keys if they are missing.
-  def initialize(myself)
+  # Ensures the `wg` tool is available; with generation enabled it also
+  # creates the key and PSK directories. keys_dir is 'keys' for the wg0 mesh and 'keys/<network>' for an access
+  # network. With generate: false a missing key pair is an error instead of a
+  # silent new key: a fresh key would no longer match the live peers.
+  def initialize(myself, keys_dir: 'keys', generate: true)
     raise 'Wireguard tool not found' unless system('which wg > /dev/null 2>&1')
 
     @myself = myself
-    @psk_dir = 'keys/psk'
-    mykeys_dir = "keys/#{myself}"
+    @psk_dir = "#{keys_dir}/psk"
+    mykeys_dir = "#{keys_dir}/#{myself}"
 
-    [mykeys_dir, @psk_dir].each do |dir|
-      FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+    if generate
+      [mykeys_dir, @psk_dir].each do |dir|
+        FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+      end
     end
 
     @pubkey_path = "#{mykeys_dir}/pub.key"
     @privkey_path = "#{mykeys_dir}/priv.key"
+    return if File.exist?(@pubkey_path) && File.exist?(@privkey_path)
+    raise "#{mykeys_dir}: key pair missing; import the live keys, they are never generated here" unless generate
 
-    gen_privpub! if !File.exist?(@pubkey_path) || !File.exist?(@privkey_path)
+    gen_privpub!
+  end
+
+  # Raises unless pub.key is the public half of priv.key (catches a botched
+  # import before it renders a config that can never handshake).
+  def verify_pair!
+    derived = IO.popen(%w[wg pubkey], 'r+') do |io|
+      io.puts(priv)
+      io.close_write
+      io.read.strip
+    end
+    raise "#{@pubkey_path} does not match its priv.key" unless derived == pub
   end
 
   def pub = File.read(@pubkey_path).strip
@@ -466,6 +485,95 @@ WireguardConfig = Struct.new(:myself, :hosts) do
   end
 end
 
+# AccessNetworkConfig renders a hub-and-spoke access VPN such as wg2, the
+# admin VPN terminated on the triggerfish router. It is independent of the
+# wg0 mesh: its own `access_networks:` YAML section, its own imported keys
+# under keys/<network>/<host>/ (never generated, see KeyTool) and no PSKs.
+# The hub must be OpenBSD (hostname.<network>); clients with keys must be
+# Linux (wg-quick <network>.conf). A client with only `public_key:` is a peer
+# on the hub whose private key lives on the device, so it gets no config.
+# Nothing here is installed by --install.
+AccessNetworkConfig = Struct.new(:name, :network) do
+  # Writes the hub and client configs, limited to only_hosts when non-empty.
+  def generate!(only_hosts = [])
+    validate!
+    wanted = ->(host) { only_hosts.empty? || only_hosts.include?(host) }
+    write(hub['host'], "/etc/hostname.#{name}", hub_conf) if wanted.call(hub['host'])
+    clients.each do |client, data|
+      next if data.key?('public_key') || !wanted.call(client)
+
+      write(client, "/etc/wireguard/#{name}.conf", client_conf(client, data))
+    end
+  end
+
+  private
+
+  def hub = network.fetch('hub')
+  def clients = network.fetch('clients')
+  def keytool(host)
+    KeyTool.new(host, keys_dir: "keys/#{name}", generate: false).tap(&:verify_pair!)
+  end
+
+  # Fails before writing anything if the section is not something we render.
+  def validate!
+    raise "#{name}: hub must be OpenBSD" unless hub['os'] == 'OpenBSD'
+    raise "#{name}: clients must be a non-empty mapping" unless clients.is_a?(Hash) && !clients.empty?
+
+    clients.each { |client, data| validate_client!(client, data) }
+    ips = [hub['ip']] + clients.values.map { _1['ip'] }
+    raise "#{name}: every peer needs a unique ip" if ips.any?(&:nil?) || ips.uniq.size != ips.size
+  end
+
+  def validate_client!(client, data)
+    raise "#{name}: #{client} needs a mapping (ip, os/public_key, ...)" unless data.is_a?(Hash)
+
+    if data.key?('public_key')
+      return if data['public_key'].to_s.match?(%r{\A[A-Za-z0-9+/]{43}=\z})
+
+      raise "#{name}: #{client} public_key is not a WireGuard key"
+    end
+    raise "#{name}: #{client} must be Linux or carry public_key" unless data['os'] == 'Linux'
+    raise "#{name}: #{client} needs a non-empty routes list" unless data['routes'].is_a?(Array) && !data['routes'].empty?
+  end
+
+  def client_pub(client, data) = data['public_key'] || keytool(client).pub
+
+  # OpenBSD hostname.if(5): the interface carries the private key and one
+  # wgpeer line per client, each allowed only its own /32.
+  def hub_conf
+    peers = clients.map do |client, data|
+      "wgpeer #{client_pub(client, data)} wgaip #{data['ip']}/32"
+    end
+    <<~CONF
+      inet #{hub['ip']} #{hub['netmask']}
+      wgport #{hub['port']}
+      wgkey #{keytool(hub['host']).priv}
+      #{peers.join("\n")}
+      up
+    CONF
+  end
+
+  # wg-quick config: the hub is the only peer and carries the client's routes.
+  def client_conf(client, data)
+    lines = ['[Interface]', "Address = #{data['ip']}/32",
+             "PrivateKey = #{keytool(client).priv}", '',
+             '[Peer]', "PublicKey = #{keytool(hub['host']).pub}",
+             "Endpoint = #{hub['endpoint']}:#{hub['port']}",
+             "AllowedIPs = #{data['routes'].join(', ')}"]
+    lines << "PersistentKeepalive = #{data['keepalive']}" if data['keepalive']
+    "#{lines.join("\n")}\n"
+  end
+
+  # Configs hold private keys, so they are written owner-only.
+  def write(host, path, content)
+    dist_path = "dist/#{host}#{path}"
+    puts "Generating #{dist_path}"
+    FileUtils.mkdir_p(File.dirname(dist_path))
+    File.write(dist_path, content, perm: 0o600)
+    File.chmod(0o600, dist_path)
+  end
+end
+
 # InstallConfig is a utility class for managing the installation,
 # configuration, and restarting of Wireguard on a remote host. It uses SSH and
 # SCP for remote operations.
@@ -617,6 +725,14 @@ begin
     end
     # Clean Wireguard configuration for the host.
     WireguardConfig.new(host, conf['hosts']).clean! if options[:clean]
+  end
+
+  # Access networks (wg2, ...) are generated only; --install never pushes
+  # them (the router has its own guarded rollout path).
+  if options[:generate]
+    (conf['access_networks'] || {}).each do |name, network|
+      AccessNetworkConfig.new(name, network).generate!(options[:hosts])
+    end
   end
 rescue StandardError => e
   puts "Error: #{e.message}"

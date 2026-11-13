@@ -335,3 +335,41 @@ hosts:
     - pi0
     - pi1
     - uranus
+# Hub-and-spoke access VPNs. They are separate from the wg0 mesh above: own
+# keys under keys/<network>/<host>/, own subnet and port, no PSKs, and
+# --install never touches them (see README.md).
+access_networks:
+  wg2:
+    # triggerfish (OpenBSD home-lab router) terminates the admin VPN and
+    # renders /etc/hostname.wg2. Router changes go through conf's guarded
+    # router-rollback path, never through this generator's --install.
+    hub:
+      host: triggerfish
+      os: OpenBSD
+      ip: 10.99.0.1
+      netmask: 255.255.255.0
+      port: 51822
+      # Router igc0 address, reachable from the home Wi-Fi/ISP LAN.
+      endpoint: 192.168.1.2
+    clients:
+      earth:
+        os: Linux
+        ip: 10.99.0.2
+        keepalive: 25
+        # Prefixes earth routes into wg2 (lab, Shelly plugs, the hub itself).
+        # 192.168.11.140-143 are stale (no router PF rule matches them any
+        # more) and kept only until someone decides to drop them.
+        routes:
+        - 10.20.0.0/24
+        - 10.30.0.28/32
+        - 10.30.0.29/32
+        - 10.99.0.1/32
+        - 192.168.11.140/32
+        - 192.168.11.141/32
+        - 192.168.11.142/32
+        - 192.168.11.143/32
+      pixel7pro:
+        # Public-only peer: its private key exists only on the phone (it is
+        # not the wg0 pixel7pro key), so no client config is generated.
+        ip: 10.99.0.3
+        public_key: AgyVbKmGEi0f5W9HyKnKKtAR0X338rB7SBO+SF6IhgA=

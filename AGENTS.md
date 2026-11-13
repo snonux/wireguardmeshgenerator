@@ -16,6 +16,11 @@
 - Never run `rake clean` while preserving existing keys: `clean!` removes the
   entire `keys/` directory as well as `dist/`.
 - Do not delete the unrelated `buetowdotorg` phone tunnel.
+- `keys/wg2/` holds the imported triggerfish router and earth keys for the wg2
+  access VPN (see README.md). Never regenerate them, and never install
+  `dist/triggerfish/etc/hostname.wg2` from here: the router changes only
+  through conf's guarded rollout, and the generated file must match the live
+  one by hash.
 - Deleting phone tunnels, rotating keys, or installing gateway configuration is
   destructive/shared-state work. Obtain explicit user approval first. A normal
   phone refresh reuses the current keys and does not require gateway changes.
